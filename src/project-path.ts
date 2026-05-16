@@ -20,6 +20,20 @@ function assertInsideProject(root: string, absolutePath: string) {
   return relativePath;
 }
 
+function assertWritableRelativePath(relativePath: string) {
+  const pathParts = relativePath.split(path.sep);
+
+  if (blockedWriteFiles.has(relativePath)) {
+    throw new Error(`File is not writable by the agent: ${relativePath}`);
+  }
+
+  const blockedDirectory = pathParts.find((part) => blockedWriteDirectories.has(part));
+
+  if (blockedDirectory) {
+    throw new Error(`Directory is not writable by the agent: ${blockedDirectory}`);
+  }
+}
+
 export async function resolveExistingProjectPath(inputPath: string) {
   const root = await realpath(process.cwd());
   const absolutePath = await realpath(path.resolve(root, inputPath));
@@ -34,17 +48,24 @@ export async function resolveExistingProjectPath(inputPath: string) {
 
 export async function resolveWritableProjectPath(inputPath: string) {
   const projectPath = await resolveExistingProjectPath(inputPath);
-  const pathParts = projectPath.relativePath.split(path.sep);
 
-  if (blockedWriteFiles.has(projectPath.relativePath)) {
-    throw new Error(`File is not writable by the agent: ${projectPath.relativePath}`);
-  }
-
-  const blockedDirectory = pathParts.find((part) => blockedWriteDirectories.has(part));
-
-  if (blockedDirectory) {
-    throw new Error(`Directory is not writable by the agent: ${blockedDirectory}`);
-  }
+  assertWritableRelativePath(projectPath.relativePath);
 
   return projectPath;
+}
+
+export async function resolveNewWritableProjectPath(inputPath: string) {
+  const root = await realpath(process.cwd());
+  const absolutePath = path.resolve(root, inputPath);
+  const relativePath = assertInsideProject(root, absolutePath);
+  const parentDirectory = await realpath(path.dirname(absolutePath));
+
+  assertInsideProject(root, parentDirectory);
+  assertWritableRelativePath(relativePath);
+
+  return {
+    root,
+    absolutePath,
+    relativePath,
+  };
 }

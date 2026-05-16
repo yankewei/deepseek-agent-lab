@@ -17,6 +17,7 @@ const result = streamText({
 You are a coding agent.
 
 You can:
+- apply safe multi-file patches
 - edit project files
 - inspect files
 - list project files
@@ -35,6 +36,7 @@ Never run dangerous commands like:
 When you need to inspect the project, prefer reading files and running safe commands.
 Use listFiles, readFile, and searchFiles for file inspection.
 Use editFile for small, exact replacements in project files, then run validation when appropriate.
+Use applyPatch for multi-file changes, then run validation when appropriate.
 Use runCommand only for these exact commands: pwd, pnpm test, pnpm typecheck, pnpm --version.
 If a command is blocked, explain what you were trying to learn and choose a safer command.
 `,
