@@ -1,12 +1,12 @@
-import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import test from "node:test";
+import { describe, it, expect } from "vitest";
 import { resolveExistingProjectPath, resolveWritableProjectPath } from "../src/project-path.js";
-import { assertSafeCommand } from "../src/safety.js";
+import { assertApprovableCommand, assertSafeCommand } from "../src/safety.js";
 import { applyPatch } from "../src/tools/apply-patch.js";
 import { editFile } from "../src/tools/edit-file.js";
+import { runApprovedCommand } from "../src/tools/run-approved-command.js";
 
 async function withTempProject(run: (projectRoot: string) => Promise<void>) {
   const originalCwd = process.cwd();
@@ -21,166 +21,203 @@ async function withTempProject(run: (projectRoot: string) => Promise<void>) {
   }
 }
 
-test("runCommand safety only allows fixed validation commands", () => {
-  assert.doesNotThrow(() => assertSafeCommand("pwd"));
-  assert.doesNotThrow(() => assertSafeCommand(" pnpm   typecheck "));
-  assert.doesNotThrow(() => assertSafeCommand("pnpm test"));
+describe("runCommand safety", () => {
+  it("only allows fixed validation commands", () => {
+    expect(() => assertSafeCommand("pwd")).not.toThrow();
+    expect(() => assertSafeCommand(" pnpm   typecheck ")).not.toThrow();
+    expect(() => assertSafeCommand("pnpm test")).not.toThrow();
 
-  assert.throws(() => assertSafeCommand("cat package.json"), /Command is not allowed/);
-  assert.throws(() => assertSafeCommand("rg streamText ."), /Command is not allowed/);
-  assert.throws(() => assertSafeCommand("pnpm exec cat package.json"), /Command is not allowed/);
-  assert.throws(() => assertSafeCommand("pnpm test && cat .env"), /Shell operator is not allowed/);
-});
+    expect(() => assertSafeCommand("cat package.json")).toThrow(/Command is not allowed/);
+    expect(() => assertSafeCommand("rg streamText .")).toThrow(/Command is not allowed/);
+    expect(() => assertSafeCommand("pnpm exec cat package.json")).toThrow(/Command is not allowed/);
+    expect(() => assertSafeCommand("pnpm test && cat .env")).toThrow(/Shell operator is not allowed/);
+  });
 
-test("project path resolver rejects files outside the current project", async () => {
-  await withTempProject(async (projectRoot) => {
-    await writeFile("package.json", "{}\n", "utf8");
+  it("classifies dependency changes as approvable commands", () => {
+    expect(assertApprovableCommand("pnpm install")).toBe("pnpm install");
+    expect(assertApprovableCommand(" pnpm   add   -D   vitest ")).toBe("pnpm add -D vitest");
+    expect(assertApprovableCommand("pnpm remove vitest")).toBe("pnpm remove vitest");
 
-    const projectPath = await resolveExistingProjectPath("package.json");
-    assert.equal(projectPath.root, await realpath(projectRoot));
-    assert.equal(projectPath.relativePath, "package.json");
-
-    await assert.rejects(
-      () => resolveExistingProjectPath(path.join(projectRoot, "..")),
-      /Path must stay inside the current project/,
-    );
+    expect(() => assertApprovableCommand("pnpm test")).toThrow(/does not require approval/);
+    expect(() => assertApprovableCommand("cat package.json")).toThrow(/not approvable/);
+    expect(() => assertApprovableCommand("pnpm install && cat .env")).toThrow(/Shell operator is not allowed/);
   });
 });
 
-test("project path resolver rejects symlinks that point outside the current project", async () => {
-  await withTempProject(async (projectRoot) => {
-    const outsideFile = path.join(tmpdir(), `deepseek-agent-lab-outside-${Date.now()}.txt`);
-    await writeFile(outsideFile, "secret\n", "utf8");
-    await symlink(outsideFile, path.join(projectRoot, "linked-secret.txt"));
+describe("runApprovedCommand", () => {
+  it("skips execution when approval is denied", async () => {
+    const result = await runApprovedCommand({ command: "pnpm install", reason: "sync dependencies" }, async () => false);
 
-    try {
-      await assert.rejects(
-        () => resolveExistingProjectPath("linked-secret.txt"),
-        /Path must stay inside the current project/,
-      );
-    } finally {
-      await rm(outsideFile, { force: true });
-    }
-  });
-});
-
-test("writable path resolver blocks sensitive and generated paths", async () => {
-  await withTempProject(async () => {
-    await writeFile("index.ts", "console.log('ok');\n", "utf8");
-    await writeFile(".env", "TOKEN=secret\n", "utf8");
-    await writeFile("pnpm-lock.yaml", "lockfileVersion: '9.0'\n", "utf8");
-    await mkdir("node_modules/pkg", { recursive: true });
-    await writeFile("node_modules/pkg/index.js", "", "utf8");
-
-    await assert.doesNotReject(() => resolveWritableProjectPath("index.ts"));
-    await assert.rejects(() => resolveWritableProjectPath(".env"), /File is not writable/);
-    await assert.rejects(() => resolveWritableProjectPath("pnpm-lock.yaml"), /File is not writable/);
-    await assert.rejects(() => resolveWritableProjectPath("node_modules/pkg/index.js"), /Directory is not writable/);
-  });
-});
-
-test("editFile replaces one exact text block", async () => {
-  await withTempProject(async () => {
-    await writeFile("index.ts", "const name = 'agent';\nconsole.log(name);\n", "utf8");
-
-    const result = await editFile({
-      path: "index.ts",
-      oldText: "const name = 'agent';",
-      newText: "const name = 'coding-agent';",
+    expect(result).toEqual({
+      approved: false,
+      skipped: true,
     });
+  });
 
-    assert.deepEqual(result, { path: "index.ts", changed: true });
-    assert.equal(await readFile("index.ts", "utf8"), "const name = 'coding-agent';\nconsole.log(name);\n");
+  it("runs an approvable command after approval", async () => {
+    const result = await runApprovedCommand(
+      { command: "pnpm add -D vitest", reason: "install test framework" },
+      async () => true,
+      async (command, args) => ({
+        stdout: `${command} ${args.join(" ")}`,
+        stderr: "",
+        exitCode: 0,
+      }),
+    );
+
+    expect(result.approved).toBe(true);
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe("pnpm add -D vitest");
   });
 });
 
-test("editFile rejects missing or ambiguous oldText", async () => {
-  await withTempProject(async () => {
-    await writeFile("index.ts", "const value = 1;\nconst value = 1;\n", "utf8");
+describe("project path resolver", () => {
+  it("rejects files outside the current project", async () => {
+    await withTempProject(async (projectRoot) => {
+      await writeFile("package.json", "{}\n", "utf8");
 
-    await assert.rejects(
-      () =>
+      const projectPath = await resolveExistingProjectPath("package.json");
+      expect(projectPath.root).toBe(await realpath(projectRoot));
+      expect(projectPath.relativePath).toBe("package.json");
+
+      await expect(
+        resolveExistingProjectPath(path.join(projectRoot, "..")),
+      ).rejects.toThrow(/Path must stay inside the current project/);
+    });
+  });
+
+  it("rejects symlinks that point outside the current project", async () => {
+    await withTempProject(async (projectRoot) => {
+      const outsideFile = path.join(tmpdir(), `deepseek-agent-lab-outside-${Date.now()}.txt`);
+      await writeFile(outsideFile, "secret\n", "utf8");
+      await symlink(outsideFile, path.join(projectRoot, "linked-secret.txt"));
+
+      try {
+        await expect(
+          resolveExistingProjectPath("linked-secret.txt"),
+        ).rejects.toThrow(/Path must stay inside the current project/);
+      } finally {
+        await rm(outsideFile, { force: true });
+      }
+    });
+  });
+});
+
+describe("writable path resolver", () => {
+  it("blocks sensitive and generated paths", async () => {
+    await withTempProject(async () => {
+      await writeFile("index.ts", "console.log('ok');\n", "utf8");
+      await writeFile(".env", "TOKEN=secret\n", "utf8");
+      await writeFile("pnpm-lock.yaml", "lockfileVersion: '9.0'\n", "utf8");
+      await mkdir("node_modules/pkg", { recursive: true });
+      await writeFile("node_modules/pkg/index.js", "", "utf8");
+
+      await expect(resolveWritableProjectPath("index.ts")).resolves.toBeDefined();
+      await expect(resolveWritableProjectPath(".env")).rejects.toThrow(/File is not writable/);
+      await expect(resolveWritableProjectPath("pnpm-lock.yaml")).rejects.toThrow(/File is not writable/);
+      await expect(resolveWritableProjectPath("node_modules/pkg/index.js")).rejects.toThrow(/Directory is not writable/);
+    });
+  });
+});
+
+describe("editFile", () => {
+  it("replaces one exact text block", async () => {
+    await withTempProject(async () => {
+      await writeFile("index.ts", "const name = 'agent';\nconsole.log(name);\n", "utf8");
+
+      const result = await editFile({
+        path: "index.ts",
+        oldText: "const name = 'agent';",
+        newText: "const name = 'coding-agent';",
+      });
+
+      expect(result).toEqual({ path: "index.ts", changed: true });
+      expect(await readFile("index.ts", "utf8")).toBe("const name = 'coding-agent';\nconsole.log(name);\n");
+    });
+  });
+
+  it("rejects missing or ambiguous oldText", async () => {
+    await withTempProject(async () => {
+      await writeFile("index.ts", "const value = 1;\nconst value = 1;\n", "utf8");
+
+      await expect(
         editFile({
           path: "index.ts",
           oldText: "const missing = true;",
           newText: "const missing = false;",
         }),
-      /oldText was not found/,
-    );
+      ).rejects.toThrow(/oldText was not found/);
 
-    await assert.rejects(
-      () =>
+      await expect(
         editFile({
           path: "index.ts",
           oldText: "const value = 1;",
           newText: "const value = 2;",
         }),
-      /oldText appears 2 times/,
-    );
+      ).rejects.toThrow(/oldText appears 2 times/);
+    });
   });
-});
 
-test("editFile cannot write blocked files", async () => {
-  await withTempProject(async () => {
-    await writeFile(".env", "TOKEN=secret\n", "utf8");
+  it("cannot write blocked files", async () => {
+    await withTempProject(async () => {
+      await writeFile(".env", "TOKEN=secret\n", "utf8");
 
-    await assert.rejects(
-      () =>
+      await expect(
         editFile({
           path: ".env",
           oldText: "TOKEN=secret",
           newText: "TOKEN=changed",
         }),
-      /File is not writable/,
-    );
+      ).rejects.toThrow(/File is not writable/);
+    });
   });
 });
 
-test("applyPatch can update an existing file", async () => {
-  await withTempProject(async () => {
-    await writeFile("index.ts", "const name = 'agent';\nconsole.log(name);\n", "utf8");
+describe("applyPatch", () => {
+  it("can update an existing file", async () => {
+    await withTempProject(async () => {
+      await writeFile("index.ts", "const name = 'agent';\nconsole.log(name);\n", "utf8");
 
-    const result = await applyPatch({
-      patch: `*** Begin Patch
+      const result = await applyPatch({
+        patch: `*** Begin Patch
 *** Update File: index.ts
 @@
 -const name = 'agent';
 +const name = 'coding-agent';
  console.log(name);
 *** End Patch`,
+      });
+
+      expect(result).toEqual({ changedFiles: ["index.ts"] });
+      expect(await readFile("index.ts", "utf8")).toBe("const name = 'coding-agent';\nconsole.log(name);\n");
     });
-
-    assert.deepEqual(result, { changedFiles: ["index.ts"] });
-    assert.equal(await readFile("index.ts", "utf8"), "const name = 'coding-agent';\nconsole.log(name);\n");
   });
-});
 
-test("applyPatch can add and delete files", async () => {
-  await withTempProject(async () => {
-    await writeFile("old.txt", "remove me\n", "utf8");
+  it("can add and delete files", async () => {
+    await withTempProject(async () => {
+      await writeFile("old.txt", "remove me\n", "utf8");
 
-    const result = await applyPatch({
-      patch: `*** Begin Patch
+      const result = await applyPatch({
+        patch: `*** Begin Patch
 *** Add File: new.txt
 +hello
 +world
 *** Delete File: old.txt
 *** End Patch`,
+      });
+
+      expect(result).toEqual({ changedFiles: ["new.txt", "old.txt"] });
+      expect(await readFile("new.txt", "utf8")).toBe("hello\nworld\n");
+      await expect(readFile("old.txt", "utf8")).rejects.toThrow(/ENOENT/);
     });
-
-    assert.deepEqual(result, { changedFiles: ["new.txt", "old.txt"] });
-    assert.equal(await readFile("new.txt", "utf8"), "hello\nworld\n");
-    await assert.rejects(() => readFile("old.txt", "utf8"), /ENOENT/);
   });
-});
 
-test("applyPatch rejects blocked files before applying changes", async () => {
-  await withTempProject(async () => {
-    await writeFile("index.ts", "const safe = true;\n", "utf8");
-    await writeFile(".env", "TOKEN=secret\n", "utf8");
+  it("rejects blocked files before applying changes", async () => {
+    await withTempProject(async () => {
+      await writeFile("index.ts", "const safe = true;\n", "utf8");
+      await writeFile(".env", "TOKEN=secret\n", "utf8");
 
-    await assert.rejects(
-      () =>
+      await expect(
         applyPatch({
           patch: `*** Begin Patch
 *** Update File: index.ts
@@ -193,35 +230,31 @@ test("applyPatch rejects blocked files before applying changes", async () => {
 +TOKEN=changed
 *** End Patch`,
         }),
-      /File is not writable/,
-    );
+      ).rejects.toThrow(/File is not writable/);
 
-    assert.equal(await readFile("index.ts", "utf8"), "const safe = true;\n");
-    assert.equal(await readFile(".env", "utf8"), "TOKEN=secret\n");
+      expect(await readFile("index.ts", "utf8")).toBe("const safe = true;\n");
+      expect(await readFile(".env", "utf8")).toBe("TOKEN=secret\n");
+    });
   });
-});
 
-test("applyPatch rejects paths outside the project", async () => {
-  await withTempProject(async () => {
-    await assert.rejects(
-      () =>
+  it("rejects paths outside the project", async () => {
+    await withTempProject(async () => {
+      await expect(
         applyPatch({
           patch: `*** Begin Patch
 *** Add File: ../outside.txt
 +nope
 *** End Patch`,
         }),
-      /Path must stay inside the current project/,
-    );
+      ).rejects.toThrow(/Path must stay inside the current project/);
+    });
   });
-});
 
-test("applyPatch rejects ambiguous update hunks", async () => {
-  await withTempProject(async () => {
-    await writeFile("index.ts", "const value = 1;\nconst value = 1;\n", "utf8");
+  it("rejects ambiguous update hunks", async () => {
+    await withTempProject(async () => {
+      await writeFile("index.ts", "const value = 1;\nconst value = 1;\n", "utf8");
 
-    await assert.rejects(
-      () =>
+      await expect(
         applyPatch({
           patch: `*** Begin Patch
 *** Update File: index.ts
@@ -230,7 +263,7 @@ test("applyPatch rejects ambiguous update hunks", async () => {
 +const value = 2;
 *** End Patch`,
         }),
-      /provide more context/,
-    );
+      ).rejects.toThrow(/provide more context/);
+    });
   });
 });
