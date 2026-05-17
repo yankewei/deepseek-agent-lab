@@ -153,6 +153,29 @@ run checks -> runCommand
 dependency changes -> runCommand with approval
 ```
 
+## Execution State Tracking
+
+Command execution is also tracked in memory. The tracker records how one command
+moves through the runtime:
+
+```text
+created
+-> policy_evaluated
+-> waiting_for_approval
+-> approved / denied
+-> running
+-> completed / failed
+```
+
+For now, this is intentionally small:
+
+- only command execution is tracked
+- records live in memory
+- no event stream or persistence yet
+
+This keeps the runtime easy to inspect while showing the core idea: policy says
+what should happen, and execution state records what actually happened.
+
 ## Editing Strategy
 
 There are two write tools:
@@ -201,6 +224,7 @@ The test suite covers the important safety behavior:
 - blocked write paths
 - `editFile` behavior
 - `applyPatch` behavior
+- command execution state tracking
 
 Run:
 
@@ -221,9 +245,11 @@ This repo has been built step by step:
 7. `applyPatch`
 8. Approval workflow
 9. Policy engine
+10. Execution state tracking
 
 Good next topics:
 
+- event stream
 - richer approval UI
 - git diff summary tool
 - commit and PR workflow
