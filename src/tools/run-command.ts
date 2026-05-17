@@ -1,28 +1,16 @@
 import { tool } from "ai";
-import { execa } from "execa";
 import { z } from "zod";
-import { assertSafeCommand } from "../safety.js";
+import { executeCommandWithPolicy } from "../command-executor.js";
 
 export const runCommandTool = tool({
-  description: "Run an allowed project validation command",
+  description: "Run a project command allowed by policy, asking for approval when required",
 
   inputSchema: z.object({
     command: z.string(),
+    reason: z.string().optional(),
   }),
 
-  execute: async ({ command }) => {
-    assertSafeCommand(command);
-
-    const [cmd, ...args] = command.trim().split(/\s+/);
-
-    const result = await execa(cmd, args, {
-      reject: false,
-    });
-
-    return {
-      stdout: result.stdout,
-      stderr: result.stderr,
-      exitCode: result.exitCode,
-    };
+  execute: async ({ command, reason }) => {
+    return await executeCommandWithPolicy({ command, reason });
   },
 });

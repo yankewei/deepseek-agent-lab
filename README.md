@@ -67,8 +67,7 @@ The agent has dedicated tools instead of unrestricted shell access.
 | `searchFiles` | Search project files with `rg` |
 | `editFile` | Replace one exact text block in one file |
 | `applyPatch` | Apply a safe multi-file patch |
-| `runCommand` | Run fixed low-risk validation commands |
-| `runApprovedCommand` | Ask the user before running dependency commands |
+| `runCommand` | Run commands allowed by policy, asking for approval when required |
 
 ## Safety Model
 
@@ -77,6 +76,28 @@ The important design rule is:
 ```text
 Do not let the model use native shell commands as a general toolbox.
 Wrap common actions in dedicated, safer tools.
+```
+
+Command safety is handled through a small policy engine. Before any command runs,
+the project classifies it into one of three decisions:
+
+```text
+allow      -> run immediately
+prompt     -> ask the user for approval first
+forbidden  -> reject without running
+```
+
+Current command policy:
+
+```text
+pwd                  -> allow
+pnpm test            -> allow
+pnpm typecheck       -> allow
+pnpm --version       -> allow
+pnpm install         -> prompt
+pnpm add ...         -> prompt
+pnpm remove ...      -> prompt
+everything else      -> forbidden
 ```
 
 File tools are restricted to the current project. They use real paths to block:
@@ -95,7 +116,7 @@ Write tools additionally block sensitive or generated paths:
 - `.next/`
 - `pnpm-lock.yaml`
 
-`runCommand` only allows:
+`runCommand` runs these commands without approval:
 
 ```text
 pwd
@@ -104,7 +125,7 @@ pnpm typecheck
 pnpm --version
 ```
 
-Dependency changes must use `runApprovedCommand`, which asks the user before running:
+Dependency changes use `runCommand` too, but require approval before running:
 
 ```text
 pnpm install
@@ -129,7 +150,7 @@ read files -> readFile
 list files -> listFiles
 search code -> searchFiles
 run checks -> runCommand
-dependency changes -> runApprovedCommand
+dependency changes -> runCommand with approval
 ```
 
 ## Editing Strategy
@@ -199,6 +220,7 @@ This repo has been built step by step:
 6. Tests
 7. `applyPatch`
 8. Approval workflow
+9. Policy engine
 
 Good next topics:
 

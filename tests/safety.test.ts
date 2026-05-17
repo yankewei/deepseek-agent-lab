@@ -1,25 +1,41 @@
 import { describe, expect, it } from "vitest";
-import { assertApprovableCommand, assertSafeCommand } from "../src/safety.js";
+import { evaluateCommandPolicy } from "../src/policy.js";
 
-describe("runCommand safety", () => {
-  it("only allows fixed validation commands", () => {
-    expect(() => assertSafeCommand("pwd")).not.toThrow();
-    expect(() => assertSafeCommand(" pnpm   typecheck ")).not.toThrow();
-    expect(() => assertSafeCommand("pnpm test")).not.toThrow();
+describe("command policy", () => {
+  it("classifies commands before execution", () => {
+    expect(evaluateCommandPolicy(" pnpm   typecheck ")).toEqual({
+      type: "allow",
+      command: "pnpm typecheck",
+      reason: "Known low-risk validation command.",
+    });
 
-    expect(() => assertSafeCommand("cat package.json")).toThrow(/Command is not allowed/);
-    expect(() => assertSafeCommand("rg streamText .")).toThrow(/Command is not allowed/);
-    expect(() => assertSafeCommand("pnpm exec cat package.json")).toThrow(/Command is not allowed/);
-    expect(() => assertSafeCommand("pnpm test && cat .env")).toThrow(/Shell operator is not allowed/);
+    expect(evaluateCommandPolicy("pnpm add -D vitest")).toEqual({
+      type: "prompt",
+      command: "pnpm add -D vitest",
+      reason: "Dependency command requires user approval.",
+    });
+
+    expect(evaluateCommandPolicy("cat package.json")).toEqual({
+      type: "forbidden",
+      command: "cat package.json",
+      reason: "Command is not allowed: cat package.json",
+    });
+  });
+
+  it("forbids shell operators before command classification", () => {
+    expect(evaluateCommandPolicy("pnpm test && cat .env")).toEqual({
+      type: "forbidden",
+      command: "pnpm test && cat .env",
+      reason: "Shell operator is not allowed in command: pnpm test && cat .env",
+    });
   });
 
   it("classifies dependency changes as approvable commands", () => {
-    expect(assertApprovableCommand("pnpm install")).toBe("pnpm install");
-    expect(assertApprovableCommand(" pnpm   add   -D   vitest ")).toBe("pnpm add -D vitest");
-    expect(assertApprovableCommand("pnpm remove vitest")).toBe("pnpm remove vitest");
-
-    expect(() => assertApprovableCommand("pnpm test")).toThrow(/does not require approval/);
-    expect(() => assertApprovableCommand("cat package.json")).toThrow(/not approvable/);
-    expect(() => assertApprovableCommand("pnpm install && cat .env")).toThrow(/Shell operator is not allowed/);
+    expect(evaluateCommandPolicy("pnpm install").type).toBe("prompt");
+    expect(evaluateCommandPolicy(" pnpm   add   -D   vitest ")).toMatchObject({
+      type: "prompt",
+      command: "pnpm add -D vitest",
+    });
+    expect(evaluateCommandPolicy("pnpm remove vitest").type).toBe("prompt");
   });
 });
