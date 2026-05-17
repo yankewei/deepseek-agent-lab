@@ -6,6 +6,7 @@ import { resolveExistingProjectPath, resolveWritableProjectPath } from "../src/p
 import { assertApprovableCommand, assertSafeCommand } from "../src/safety.js";
 import { applyPatch } from "../src/tools/apply-patch.js";
 import { editFile } from "../src/tools/edit-file.js";
+import { getDiff } from "../src/tools/get-diff.js";
 import { runApprovedCommand } from "../src/tools/run-approved-command.js";
 
 async function withTempProject(run: (projectRoot: string) => Promise<void>) {
@@ -68,6 +69,43 @@ describe("runApprovedCommand", () => {
     expect(result.approved).toBe(true);
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe("pnpm add -D vitest");
+  });
+});
+
+describe("getDiff", () => {
+  it("maps stat mode to git diff --stat", async () => {
+    const result = await getDiff({ mode: "stat" }, async (args) => ({
+      stdout: args.join(" "),
+      stderr: "",
+      exitCode: 0,
+    }));
+
+    expect(result).toEqual({
+      mode: "stat",
+      stdout: "diff --stat",
+      stderr: "",
+      exitCode: 0,
+    });
+  });
+
+  it("maps name-only mode to git diff --name-only", async () => {
+    const result = await getDiff({ mode: "name-only" }, async (args) => ({
+      stdout: args.join(" "),
+      stderr: "",
+      exitCode: 0,
+    }));
+
+    expect(result.stdout).toBe("diff --name-only");
+  });
+
+  it("maps full mode to git diff", async () => {
+    const result = await getDiff({ mode: "full" }, async (args) => ({
+      stdout: args.join(" "),
+      stderr: "",
+      exitCode: 0,
+    }));
+
+    expect(result.stdout).toBe("diff");
   });
 });
 
