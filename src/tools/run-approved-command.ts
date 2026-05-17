@@ -1,11 +1,9 @@
-import { createInterface } from "node:readline/promises";
-import { stdin as input, stdout as output } from "node:process";
 import { tool } from "ai";
 import { execa } from "execa";
 import { z } from "zod";
+import { requestApproval, type ApprovalPrompt } from "../approval.js";
 import { assertApprovableCommand } from "../safety.js";
 
-type ConfirmRun = (command: string, reason: string) => Promise<boolean>;
 type ExecuteRun = (
   command: string,
   args: string[],
@@ -15,29 +13,9 @@ type ExecuteRun = (
   exitCode: number;
 }>;
 
-export async function askUserToApproveCommand(command: string, reason: string) {
-  if (!input.isTTY) {
-    return false;
-  }
-
-  const readline = createInterface({ input, output });
-
-  try {
-    output.write("\nApproval required\n");
-    output.write(`Command: ${command}\n`);
-    output.write(`Reason: ${reason}\n`);
-
-    const answer = await readline.question("Allow this command? [y/N] ");
-
-    return answer.trim().toLowerCase() === "y";
-  } finally {
-    readline.close();
-  }
-}
-
 export async function runApprovedCommand(
   input: { command: string; reason: string },
-  confirmRun: ConfirmRun = askUserToApproveCommand,
+  prompt?: ApprovalPrompt,
   executeRun: ExecuteRun = async (command, args) => {
     const result = await execa(command, args, {
       reject: false,
@@ -51,7 +29,17 @@ export async function runApprovedCommand(
   },
 ) {
   const command = assertApprovableCommand(input.command);
-  const approved = await confirmRun(command, input.reason);
+  const approved = await requestApproval(
+    {
+      action: "run-command",
+      title: "Run approved dependency command",
+      details: {
+        Command: command,
+        Reason: input.reason,
+      },
+    },
+    prompt,
+  );
 
   if (!approved) {
     return {
