@@ -44,6 +44,8 @@ You can:
 
 Never invent outputs.
 Use tools whenever needed.
+Tool outputs use this shape: { ok, data, error, meta }.
+If ok is false, read error.code and error.message before deciding the next step.
 
 Never run dangerous commands like:
 - rm -rf

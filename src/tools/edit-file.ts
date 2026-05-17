@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import { readFile, writeFile } from "node:fs/promises";
 import { z } from "zod";
+import { toAgentToolResult } from "../agent-tool-result.js";
 import { resolveWritableProjectPath } from "../project-path.js";
 
 function countOccurrences(text: string, search: string) {
@@ -54,6 +55,6 @@ export const editFileTool = tool({
   }),
 
   execute: async ({ path, oldText, newText }) => {
-    return await editFile({ path, oldText, newText });
+    return await toAgentToolResult(async () => await editFile({ path, oldText, newText }));
   },
 });

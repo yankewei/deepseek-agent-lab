@@ -2,6 +2,7 @@ import { tool } from "ai";
 import { execa } from "execa";
 import path from "node:path";
 import { z } from "zod";
+import { toAgentToolResult } from "../agent-tool-result.js";
 import { resolveExistingProjectPath } from "../project-path.js";
 
 const ignoredGlobs = ["!.git/**", "!node_modules/**", "!dist/**", "!build/**", "!.next/**"];
@@ -46,49 +47,47 @@ export const searchFilesTool = tool({
   }),
 
   execute: async ({ query, path, maxResults, caseSensitive }) => {
-    const projectPath = await resolveExistingProjectPath(path);
-    const args = [
-      "--line-number",
-      "--no-heading",
-      "--with-filename",
-      "--color=never",
-      "--fixed-strings",
-      ...ignoredGlobs.flatMap((glob) => ["--glob", glob]),
-    ];
+    return await toAgentToolResult(async () => {
+      const projectPath = await resolveExistingProjectPath(path);
+      const args = [
+        "--line-number",
+        "--no-heading",
+        "--with-filename",
+        "--color=never",
+        "--fixed-strings",
+        ...ignoredGlobs.flatMap((glob) => ["--glob", glob]),
+      ];
 
-    if (!caseSensitive) {
-      args.push("--ignore-case");
-    }
+      if (!caseSensitive) {
+        args.push("--ignore-case");
+      }
 
-    args.push(query, projectPath.absolutePath);
+      args.push(query, projectPath.absolutePath);
 
-    const result = await execa("rg", args, {
-      reject: false,
+      const result = await execa("rg", args, {
+        reject: false,
+      });
+
+      if (result.exitCode === 1) {
+        return {
+          matches: [],
+        };
+      }
+
+      if (result.exitCode !== 0) {
+        throw new Error(result.stderr || `rg failed with exit code ${result.exitCode}`);
+      }
+
+      const matches = result.stdout
+        .split("\n")
+        .filter(Boolean)
+        .slice(0, maxResults)
+        .map((line) => parseRipgrepLine(line, projectPath.root))
+        .filter((match): match is SearchMatch => match !== null);
+
+      return {
+        matches,
+      };
     });
-
-    if (result.exitCode === 1) {
-      return {
-        matches: [],
-      };
-    }
-
-    if (result.exitCode !== 0) {
-      return {
-        matches: [],
-        error: result.stderr,
-        exitCode: result.exitCode,
-      };
-    }
-
-    const matches = result.stdout
-      .split("\n")
-      .filter(Boolean)
-      .slice(0, maxResults)
-      .map((line) => parseRipgrepLine(line, projectPath.root))
-      .filter((match): match is SearchMatch => match !== null);
-
-    return {
-      matches,
-    };
   },
 });

@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import { readFile, unlink, writeFile } from "node:fs/promises";
 import { z } from "zod";
+import { toAgentToolResult } from "../agent-tool-result.js";
 import { resolveNewWritableProjectPath, resolveWritableProjectPath } from "../project-path.js";
 
 type AddOperation = {
@@ -255,6 +256,6 @@ export const applyPatchTool = tool({
   }),
 
   execute: async ({ patch }) => {
-    return await applyPatch({ patch });
+    return await toAgentToolResult(async () => await applyPatch({ patch }));
   },
 });

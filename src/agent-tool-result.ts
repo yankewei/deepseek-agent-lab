@@ -1,4 +1,5 @@
 import type { AgentError } from "./errors.js";
+import { classifyToolError } from "./errors.js";
 
 export type AgentToolResultMeta = {
   executionId?: string;
@@ -38,4 +39,14 @@ export function errorAgentToolResult<T = never>(
     error,
     ...(meta ? { meta } : {}),
   };
+}
+
+export async function toAgentToolResult<T>(
+  run: () => Promise<T>,
+): Promise<AgentToolResult<T>> {
+  try {
+    return okAgentToolResult(await run());
+  } catch (error) {
+    return errorAgentToolResult(classifyToolError(error));
+  }
 }

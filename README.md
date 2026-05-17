@@ -268,12 +268,12 @@ type AgentToolResult<T> =
     };
 ```
 
-For `runCommand`, this means:
+For tools, this means:
 
 ```text
-command completed       -> ok: true, data: { stdout, stderr, exitCode }
+tool completed          -> ok: true, data: ...
 approval denied         -> ok: true, data: null, meta: { skipped: true }
-policy blocked command  -> ok: false, error: { code, message }
+tool failed             -> ok: false, error: { code, message }
 ```
 
 This makes tool output easier for the app, logs, and model to interpret without
@@ -352,6 +352,7 @@ The test suite covers the important safety behavior:
 - command execution state tracking
 - approval prompt formatting
 - command tool result envelope
+- tool result envelopes across tools
 - command error taxonomy
 
 Run:

@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
+import { toAgentToolResult } from "../agent-tool-result.js";
 import { resolveExistingProjectPath } from "../project-path.js";
 
 export const readFileTool = tool({
@@ -11,8 +12,12 @@ export const readFileTool = tool({
   }),
 
   execute: async ({ path }) => {
-    const projectPath = await resolveExistingProjectPath(path);
+    return await toAgentToolResult(async () => {
+      const projectPath = await resolveExistingProjectPath(path);
 
-    return await readFile(projectPath.absolutePath, "utf8");
+      return {
+        content: await readFile(projectPath.absolutePath, "utf8"),
+      };
+    });
   },
 });

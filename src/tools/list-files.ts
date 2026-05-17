@@ -2,6 +2,7 @@ import { tool } from "ai";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
+import { toAgentToolResult } from "../agent-tool-result.js";
 import { resolveExistingProjectPath } from "../project-path.js";
 
 const ignoredDirectories = new Set([".git", "node_modules", "dist", "build", ".next"]);
@@ -48,8 +49,8 @@ export const listFilesTool = tool({
   }),
 
   execute: async ({ path, maxDepth }) => {
-    return {
+    return await toAgentToolResult(async () => ({
       files: await listProjectFiles(path, maxDepth),
-    };
+    }));
   },
 });

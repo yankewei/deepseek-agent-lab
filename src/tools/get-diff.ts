@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import { execa } from "execa";
 import { z } from "zod";
+import { toAgentToolResult } from "../agent-tool-result.js";
 
 type DiffMode = "stat" | "name-only" | "full";
 
@@ -50,6 +51,6 @@ export const getDiffTool = tool({
   }),
 
   execute: async ({ mode }) => {
-    return await getDiff({ mode });
+    return await toAgentToolResult(async () => await getDiff({ mode }));
   },
 });

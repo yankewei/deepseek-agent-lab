@@ -39,3 +39,31 @@ export function classifyCommandExecutionError(error: unknown): AgentError {
 
   return createAgentError("EXECUTION_FAILED", message);
 }
+
+export function classifyToolError(error: unknown): AgentError {
+  const message = getErrorMessage(error);
+
+  if (message.includes("Path must stay inside the current project")) {
+    return createAgentError("PATH_OUTSIDE_PROJECT", message);
+  }
+
+  if (
+    message.includes("not writable by the agent") ||
+    message.includes("oldText was not found") ||
+    message.includes("oldText appears")
+  ) {
+    return createAgentError("VALIDATION_FAILED", message);
+  }
+
+  if (
+    message.startsWith("Patch") ||
+    message.includes("patch") ||
+    message.includes("hunk") ||
+    message.includes("Add File") ||
+    message.includes("Update File")
+  ) {
+    return createAgentError("PATCH_APPLY_FAILED", message);
+  }
+
+  return createAgentError("EXECUTION_FAILED", message);
+}

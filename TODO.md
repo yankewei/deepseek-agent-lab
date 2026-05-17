@@ -66,8 +66,8 @@
 
 ## AgentToolResult 和错误分类
 
-- [ ] 把 `AgentToolResult` 推广到所有工具。
-  现在只有 `runCommandTool` 返回 envelope。后面可以让所有 tools 都返回 `{ ok, data, error, meta }`，方便 UI 和日志统一处理。
+- [x] 把 `AgentToolResult` 推广到所有工具。
+  所有 AI SDK tool wrapper 都返回 `{ ok, data, error, meta }`。内部业务函数仍保留原始返回值，方便测试和复用。
 
 - [ ] 建立正式的 Error Taxonomy。
   目前只有 `POLICY_FORBIDDEN`、`APPROVAL_REASON_REQUIRED`、`EXECUTION_FAILED`。后面可以扩展为 `VALIDATION_FAILED`、`PATH_OUTSIDE_PROJECT`、`PATCH_APPLY_FAILED`、`APPROVAL_DENIED` 等。
