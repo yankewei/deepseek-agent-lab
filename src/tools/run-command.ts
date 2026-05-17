@@ -1,9 +1,28 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { executeCommandWithPolicy } from "../command-executor.js";
+import {
+  errorAgentToolResult,
+  okAgentToolResult,
+  type AgentToolResult,
+} from "../agent-tool-result.js";
+import { executeCommandWithPolicy, type ExecuteRun } from "../command-executor.js";
 import type { ExecutionTracker } from "../execution-state.js";
+import type { ApprovalPrompt } from "../approval.js";
+import { classifyCommandExecutionError } from "../errors.js";
 
-export function createRunCommandTool(options?: { executionTracker?: ExecutionTracker }) {
+type RunCommandToolData =
+  | {
+      stdout: string;
+      stderr: string;
+      exitCode: number;
+    }
+  | null;
+
+export function createRunCommandTool(options?: {
+  executionTracker?: ExecutionTracker;
+  prompt?: ApprovalPrompt;
+  executeRun?: ExecuteRun;
+}) {
   return tool({
     description: "Run a project command allowed by policy, asking for approval when required",
 
@@ -12,13 +31,37 @@ export function createRunCommandTool(options?: { executionTracker?: ExecutionTra
       reason: z.string().optional(),
     }),
 
-    execute: async ({ command, reason }) => {
-      return await executeCommandWithPolicy(
-        { command, reason },
-        undefined,
-        undefined,
-        options?.executionTracker,
-      );
+    execute: async ({ command, reason }): Promise<AgentToolResult<RunCommandToolData>> => {
+      try {
+        const result = await executeCommandWithPolicy(
+          { command, reason },
+          options?.prompt,
+          options?.executeRun,
+          options?.executionTracker,
+        );
+
+        if ("skipped" in result) {
+          return okAgentToolResult(null, {
+            executionId: result.executionId,
+            skipped: true,
+            approvalRequired: result.approvalRequired,
+          });
+        }
+
+        return okAgentToolResult(
+          {
+            stdout: result.stdout,
+            stderr: result.stderr,
+            exitCode: result.exitCode,
+          },
+          {
+            executionId: result.executionId,
+            approvalRequired: result.approvalRequired,
+          },
+        );
+      } catch (error) {
+        return errorAgentToolResult(classifyCommandExecutionError(error));
+      }
     },
   });
 }

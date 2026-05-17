@@ -37,10 +37,12 @@ describe("executeCommandWithPolicy", () => {
         expect(request).toEqual({
           action: "run-command",
           title: "Run command requiring approval",
+          subject: "pnpm install",
+          riskLevel: "medium",
+          policyReason: "Dependency command requires user approval.",
           details: {
             Command: "pnpm install",
             Reason: "sync dependencies",
-            Policy: "Dependency command requires user approval.",
           },
         });
 

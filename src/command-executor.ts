@@ -3,7 +3,7 @@ import { requestApproval, type ApprovalPrompt } from "./approval.js";
 import type { ExecutionTracker } from "./execution-state.js";
 import { evaluateCommandPolicy } from "./policy.js";
 
-type ExecuteRun = (
+export type ExecuteRun = (
   command: string,
   args: string[],
 ) => Promise<{
@@ -102,10 +102,12 @@ export async function executeCommandWithPolicy(
         {
           action: "run-command",
           title: "Run command requiring approval",
+          subject: decision.command,
+          riskLevel: "medium",
+          policyReason: decision.reason,
           details: {
             Command: decision.command,
             Reason: reason,
-            Policy: decision.reason,
           },
         },
         prompt,

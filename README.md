@@ -200,6 +200,107 @@ Each event is shaped like:
 The CLI wires this into `runCommand`, so command execution can be observed as it
 moves through policy evaluation, approval, running, completion, or failure.
 
+## Human-in-the-loop Approval
+
+Commands with a `prompt` policy decision require user approval before they run.
+The approval request is structured so the UI can show the important context:
+
+```ts
+{
+  action: "run-command",
+  title: "Run command requiring approval",
+  subject: "pnpm add -D vitest",
+  riskLevel: "medium",
+  policyReason: "Dependency command requires user approval.",
+  details: {
+    Command: "pnpm add -D vitest",
+    Reason: "install test framework"
+  }
+}
+```
+
+The CLI renders this as an explicit approve-once prompt:
+
+```text
+Approval required
+Run command requiring approval
+Action: run-command
+Subject: pnpm add -D vitest
+Risk: medium
+Policy: Dependency command requires user approval.
+
+Details:
+  Command: pnpm add -D vitest
+  Reason: install test framework
+
+Options:
+  y - approve once
+  n - deny
+```
+
+Only `y` approves. Any other answer denies by default.
+
+## Agent Tool Result
+
+The AI SDK already has its own tool-result protocol. This project keeps that
+outer protocol and puts a small business-level envelope inside the tool output:
+
+```ts
+type AgentToolResult<T> =
+  | {
+      ok: true;
+      data: T;
+      meta?: {
+        executionId?: string;
+        skipped?: boolean;
+        approvalRequired?: boolean;
+      };
+    }
+  | {
+      ok: false;
+      error: {
+        code: "POLICY_FORBIDDEN" | "APPROVAL_REASON_REQUIRED" | "EXECUTION_FAILED";
+        message: string;
+      };
+      meta?: {
+        executionId?: string;
+      };
+    };
+```
+
+For `runCommand`, this means:
+
+```text
+command completed       -> ok: true, data: { stdout, stderr, exitCode }
+approval denied         -> ok: true, data: null, meta: { skipped: true }
+policy blocked command  -> ok: false, error: { code, message }
+```
+
+This makes tool output easier for the app, logs, and model to interpret without
+confusing it with the AI SDK's own `ToolResult` type.
+
+## Error Taxonomy
+
+Tool errors use a shared `AgentError` shape:
+
+```ts
+type AgentError = {
+  code: AgentErrorCode;
+  message: string;
+};
+```
+
+The first command-related error codes are:
+
+```text
+POLICY_FORBIDDEN          -> policy blocked the command
+APPROVAL_REASON_REQUIRED -> a prompt command did not include a reason
+EXECUTION_FAILED         -> command execution failed unexpectedly
+```
+
+`AgentToolResult` reuses this shared error type instead of defining tool-specific
+error objects in each tool.
+
 ## Editing Strategy
 
 There are two write tools:
@@ -249,6 +350,9 @@ The test suite covers the important safety behavior:
 - `editFile` behavior
 - `applyPatch` behavior
 - command execution state tracking
+- approval prompt formatting
+- command tool result envelope
+- command error taxonomy
 
 Run:
 
@@ -271,10 +375,12 @@ This repo has been built step by step:
 9. Policy engine
 10. Execution state tracking
 11. Event stream
+12. Human-in-the-loop approval
+13. Agent tool result envelope
+14. Error taxonomy
 
 Good next topics:
 
-- richer approval UI
 - git diff summary tool
 - commit and PR workflow
 - better patch parser
