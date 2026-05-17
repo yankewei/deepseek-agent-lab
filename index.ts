@@ -1,7 +1,8 @@
 import "dotenv/config";
 import { streamText, stepCountIs } from "ai";
 import { deepseek } from "@ai-sdk/deepseek";
-import { tools } from "./src/tools/index.js";
+import { createExecutionTracker } from "./src/execution-state.js";
+import { createTools } from "./src/tools/index.js";
 
 const userPrompt = process.argv.slice(2).join(" ").trim();
 
@@ -9,6 +10,22 @@ if (!userPrompt) {
   console.error('Usage: pnpm start "请分析当前项目"');
   process.exit(1);
 }
+
+const executionTracker = createExecutionTracker({
+  onEvent(event) {
+    console.log("\n");
+    console.log("📡 EXECUTION EVENT");
+    console.log(event.record.status);
+    console.log({
+      id: event.record.id,
+      command: event.record.normalizedCommand ?? event.record.command,
+      policyDecision: event.record.policyDecision,
+      exitCode: event.record.exitCode,
+      error: event.record.error,
+    });
+    console.log("\n");
+  },
+});
 
 const result = streamText({
   model: deepseek("deepseek-v4-pro"),
@@ -47,7 +64,7 @@ If a command is blocked, explain what you were trying to learn and choose a safe
 
   prompt: userPrompt,
 
-  tools,
+  tools: createTools({ executionTracker }),
 
   stopWhen: stepCountIs(10),
 });

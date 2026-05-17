@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { executeCommandWithPolicy } from "../src/command-executor.js";
-import { createExecutionTracker, type ExecutionTracker } from "../src/execution-state.js";
+import {
+  createExecutionTracker,
+  type ExecutionEvent,
+  type ExecutionTracker,
+} from "../src/execution-state.js";
 
 function createTestTracker() {
   let id = 0;
@@ -9,6 +13,19 @@ function createTestTracker() {
   return createExecutionTracker({
     createId: () => `exec_${++id}`,
     now: () => new Date(Date.UTC(2026, 0, 1, 0, 0, timestamp++)),
+  });
+}
+
+function createTestTrackerWithEvents(events: ExecutionEvent[]) {
+  let id = 0;
+  let timestamp = 0;
+
+  return createExecutionTracker({
+    createId: () => `exec_${++id}`,
+    now: () => new Date(Date.UTC(2026, 0, 1, 0, 0, timestamp++)),
+    onEvent: (event) => {
+      events.push(event);
+    },
   });
 }
 
@@ -149,5 +166,53 @@ describe("execution state tracking", () => {
       error: "test runner crashed",
     });
     expect(recordStatuses(tracker)).toEqual(["created", "policy_evaluated", "running", "failed"]);
+  });
+
+  it("emits an event for every execution state change", async () => {
+    const events: ExecutionEvent[] = [];
+    const tracker = createTestTrackerWithEvents(events);
+
+    await executeCommandWithPolicy(
+      { command: "pnpm test" },
+      async () => {
+        throw new Error("approval should not be requested");
+      },
+      async () => ({
+        stdout: "",
+        stderr: "",
+        exitCode: 0,
+      }),
+      tracker,
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      "execution_state_changed",
+      "execution_state_changed",
+      "execution_state_changed",
+      "execution_state_changed",
+    ]);
+    expect(events.map((event) => event.record.status)).toEqual([
+      "created",
+      "policy_evaluated",
+      "running",
+      "completed",
+    ]);
+  });
+
+  it("emits cloned records so event subscribers cannot mutate tracker state", () => {
+    const events: ExecutionEvent[] = [];
+    const tracker = createTestTrackerWithEvents(events);
+
+    const record = tracker.createRecord({ command: "pnpm test" });
+    events[0].record.status = "failed";
+    events[0].record.history.push({
+      status: "failed",
+      at: "mutated",
+    });
+
+    expect(tracker.getRecord(record.id)).toMatchObject({
+      status: "created",
+      history: [{ status: "created" }],
+    });
   });
 });

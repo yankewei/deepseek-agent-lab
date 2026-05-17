@@ -31,6 +31,11 @@ export type ExecutionRecord = {
   history: ExecutionHistoryEntry[];
 };
 
+export type ExecutionEvent = {
+  type: "execution_state_changed";
+  record: ExecutionRecord;
+};
+
 export type ExecutionTracker = {
   createRecord: (input: { command: string; reason?: string }) => ExecutionRecord;
   updateRecord: (
@@ -55,17 +60,26 @@ export type ExecutionTracker = {
 function cloneRecord(record: ExecutionRecord) {
   return {
     ...record,
-    history: [...record.history],
+    history: record.history.map((entry) => ({ ...entry })),
   };
 }
 
 export function createExecutionTracker(options?: {
   createId?: () => string;
   now?: () => Date;
+  onEvent?: (event: ExecutionEvent) => void;
 }): ExecutionTracker {
   const createId = options?.createId ?? randomUUID;
   const now = options?.now ?? (() => new Date());
+  const onEvent = options?.onEvent;
   const records = new Map<string, ExecutionRecord>();
+
+  function emit(record: ExecutionRecord) {
+    onEvent?.({
+      type: "execution_state_changed",
+      record: cloneRecord(record),
+    });
+  }
 
   return {
     createRecord(input) {
@@ -81,6 +95,7 @@ export function createExecutionTracker(options?: {
       };
 
       records.set(record.id, record);
+      emit(record);
 
       return cloneRecord(record);
     },
@@ -104,6 +119,8 @@ export function createExecutionTracker(options?: {
           record.completedAt = update.completedAt ?? at;
         }
       }
+
+      emit(record);
 
       return cloneRecord(record);
     },

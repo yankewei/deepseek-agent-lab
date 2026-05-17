@@ -171,10 +171,34 @@ For now, this is intentionally small:
 
 - only command execution is tracked
 - records live in memory
-- no event stream or persistence yet
+- no persistence yet
 
 This keeps the runtime easy to inspect while showing the core idea: policy says
 what should happen, and execution state records what actually happened.
+
+## Event Stream
+
+The execution tracker can also emit events when execution state changes:
+
+```ts
+createExecutionTracker({
+  onEvent(event) {
+    console.log(event.type, event.record.status);
+  },
+});
+```
+
+Each event is shaped like:
+
+```ts
+{
+  type: "execution_state_changed",
+  record: ExecutionRecord
+}
+```
+
+The CLI wires this into `runCommand`, so command execution can be observed as it
+moves through policy evaluation, approval, running, completion, or failure.
 
 ## Editing Strategy
 
@@ -246,10 +270,10 @@ This repo has been built step by step:
 8. Approval workflow
 9. Policy engine
 10. Execution state tracking
+11. Event stream
 
 Good next topics:
 
-- event stream
 - richer approval UI
 - git diff summary tool
 - commit and PR workflow
