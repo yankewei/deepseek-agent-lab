@@ -155,8 +155,8 @@ dependency changes -> runCommand with approval
 
 ## Execution State Tracking
 
-Command execution is also tracked in memory. The tracker records how one command
-moves through the runtime:
+Execution is also tracked in memory. Command execution has the richest state
+because it includes policy and approval:
 
 ```text
 created
@@ -167,9 +167,18 @@ created
 -> completed / failed
 ```
 
+Plain tools use a shorter lifecycle:
+
+```text
+created
+-> running
+-> completed / failed
+```
+
 For now, this is intentionally small:
 
-- only command execution is tracked
+- command execution is tracked
+- all tool wrappers are tracked as plain tools
 - records live in memory
 - no persistence yet
 
@@ -379,6 +388,7 @@ This repo has been built step by step:
 12. Human-in-the-loop approval
 13. Agent tool result envelope
 14. Error taxonomy
+15. Tool execution state tracking
 
 Good next topics:
 

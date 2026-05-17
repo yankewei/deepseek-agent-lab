@@ -2,6 +2,7 @@ import { tool } from "ai";
 import { readFile, writeFile } from "node:fs/promises";
 import { z } from "zod";
 import { toAgentToolResult } from "../agent-tool-result.js";
+import { executeToolWithState, type ExecutionTracker } from "../execution-state.js";
 import { resolveWritableProjectPath } from "../project-path.js";
 
 function countOccurrences(text: string, search: string) {
@@ -45,16 +46,26 @@ export async function editFile(input: { path: string; oldText: string; newText: 
   };
 }
 
-export const editFileTool = tool({
-  description: "Edit an existing project file by replacing one exact text block",
+export function createEditFileTool(options?: { executionTracker?: ExecutionTracker }) {
+  return tool({
+    description: "Edit an existing project file by replacing one exact text block",
 
-  inputSchema: z.object({
-    path: z.string(),
-    oldText: z.string().min(1),
-    newText: z.string(),
-  }),
+    inputSchema: z.object({
+      path: z.string(),
+      oldText: z.string().min(1),
+      newText: z.string(),
+    }),
 
-  execute: async ({ path, oldText, newText }) => {
-    return await toAgentToolResult(async () => await editFile({ path, oldText, newText }));
-  },
-});
+    execute: async ({ path, oldText, newText }) => {
+      return await toAgentToolResult(async () =>
+        await executeToolWithState({
+          toolName: "editFile",
+          tracker: options?.executionTracker,
+          run: async () => await editFile({ path, oldText, newText }),
+        }),
+      );
+    },
+  });
+}
+
+export const editFileTool = createEditFileTool();

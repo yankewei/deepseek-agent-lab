@@ -17,8 +17,9 @@ export type ExecutionHistoryEntry = {
 
 export type ExecutionRecord = {
   id: string;
-  kind: "command";
-  command: string;
+  kind: "command" | "tool";
+  command?: string;
+  toolName?: string;
   reason?: string;
   status: ExecutionStatus;
   startedAt: string;
@@ -31,13 +32,24 @@ export type ExecutionRecord = {
   history: ExecutionHistoryEntry[];
 };
 
+export type CreateExecutionRecordInput =
+  | {
+      kind?: "command";
+      command: string;
+      reason?: string;
+    }
+  | {
+      kind: "tool";
+      toolName: string;
+    };
+
 export type ExecutionEvent = {
   type: "execution_state_changed";
   record: ExecutionRecord;
 };
 
 export type ExecutionTracker = {
-  createRecord: (input: { command: string; reason?: string }) => ExecutionRecord;
+  createRecord: (input: CreateExecutionRecordInput) => ExecutionRecord;
   updateRecord: (
     id: string,
     update: Partial<
@@ -86,9 +98,10 @@ export function createExecutionTracker(options?: {
       const at = now().toISOString();
       const record: ExecutionRecord = {
         id: createId(),
-        kind: "command",
-        command: input.command,
-        reason: input.reason,
+        kind: input.kind ?? "command",
+        ...(input.kind === "tool"
+          ? { toolName: input.toolName }
+          : { command: input.command, reason: input.reason }),
         status: "created",
         startedAt: at,
         history: [{ status: "created", at }],
@@ -134,4 +147,38 @@ export function createExecutionTracker(options?: {
       return Array.from(records.values(), cloneRecord);
     },
   };
+}
+
+export async function executeToolWithState<T>(
+  input: {
+    toolName: string;
+    tracker?: ExecutionTracker;
+    run: () => Promise<T>;
+  },
+): Promise<T> {
+  const record = input.tracker?.createRecord({
+    kind: "tool",
+    toolName: input.toolName,
+  });
+
+  const updateRecord = (
+    update: Parameters<ExecutionTracker["updateRecord"]>[1],
+  ) => {
+    if (record) {
+      input.tracker?.updateRecord(record.id, update);
+    }
+  };
+
+  try {
+    updateRecord({ status: "running" });
+    const result = await input.run();
+    updateRecord({ status: "completed" });
+    return result;
+  } catch (error) {
+    updateRecord({
+      status: "failed",
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
 }

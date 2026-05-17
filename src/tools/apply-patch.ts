@@ -2,6 +2,7 @@ import { tool } from "ai";
 import { readFile, unlink, writeFile } from "node:fs/promises";
 import { z } from "zod";
 import { toAgentToolResult } from "../agent-tool-result.js";
+import { executeToolWithState, type ExecutionTracker } from "../execution-state.js";
 import { resolveNewWritableProjectPath, resolveWritableProjectPath } from "../project-path.js";
 
 type AddOperation = {
@@ -248,14 +249,24 @@ export async function applyPatch(input: { patch: string }) {
   };
 }
 
-export const applyPatchTool = tool({
-  description: "Apply a safe multi-file patch inside the current project",
+export function createApplyPatchTool(options?: { executionTracker?: ExecutionTracker }) {
+  return tool({
+    description: "Apply a safe multi-file patch inside the current project",
 
-  inputSchema: z.object({
-    patch: z.string().min(1),
-  }),
+    inputSchema: z.object({
+      patch: z.string().min(1),
+    }),
 
-  execute: async ({ patch }) => {
-    return await toAgentToolResult(async () => await applyPatch({ patch }));
-  },
-});
+    execute: async ({ patch }) => {
+      return await toAgentToolResult(async () =>
+        await executeToolWithState({
+          toolName: "applyPatch",
+          tracker: options?.executionTracker,
+          run: async () => await applyPatch({ patch }),
+        }),
+      );
+    },
+  });
+}
+
+export const applyPatchTool = createApplyPatchTool();

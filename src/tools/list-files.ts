@@ -3,6 +3,7 @@ import { readdir } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { toAgentToolResult } from "../agent-tool-result.js";
+import { executeToolWithState, type ExecutionTracker } from "../execution-state.js";
 import { resolveExistingProjectPath } from "../project-path.js";
 
 const ignoredDirectories = new Set([".git", "node_modules", "dist", "build", ".next"]);
@@ -40,17 +41,27 @@ async function listProjectFiles(directory: string, maxDepth: number) {
   return files.sort();
 }
 
-export const listFilesTool = tool({
-  description: "List files in the current project",
+export function createListFilesTool(options?: { executionTracker?: ExecutionTracker }) {
+  return tool({
+    description: "List files in the current project",
 
-  inputSchema: z.object({
-    path: z.string().default("."),
-    maxDepth: z.number().int().min(0).max(5).default(2),
-  }),
+    inputSchema: z.object({
+      path: z.string().default("."),
+      maxDepth: z.number().int().min(0).max(5).default(2),
+    }),
 
-  execute: async ({ path, maxDepth }) => {
-    return await toAgentToolResult(async () => ({
-      files: await listProjectFiles(path, maxDepth),
-    }));
-  },
-});
+    execute: async ({ path, maxDepth }) => {
+      return await toAgentToolResult(async () =>
+        await executeToolWithState({
+          toolName: "listFiles",
+          tracker: options?.executionTracker,
+          run: async () => ({
+            files: await listProjectFiles(path, maxDepth),
+          }),
+        }),
+      );
+    },
+  });
+}
+
+export const listFilesTool = createListFilesTool();

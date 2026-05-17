@@ -3,6 +3,7 @@ import { execa } from "execa";
 import path from "node:path";
 import { z } from "zod";
 import { toAgentToolResult } from "../agent-tool-result.js";
+import { executeToolWithState, type ExecutionTracker } from "../execution-state.js";
 import { resolveExistingProjectPath } from "../project-path.js";
 
 const ignoredGlobs = ["!.git/**", "!node_modules/**", "!dist/**", "!build/**", "!.next/**"];
@@ -36,58 +37,68 @@ function parseRipgrepLine(line: string, root: string): SearchMatch | null {
   };
 }
 
-export const searchFilesTool = tool({
-  description: "Search text in project files",
+export function createSearchFilesTool(options?: { executionTracker?: ExecutionTracker }) {
+  return tool({
+    description: "Search text in project files",
 
-  inputSchema: z.object({
-    query: z.string().min(1),
-    path: z.string().default("."),
-    maxResults: z.number().int().min(1).max(100).default(20),
-    caseSensitive: z.boolean().default(false),
-  }),
+    inputSchema: z.object({
+      query: z.string().min(1),
+      path: z.string().default("."),
+      maxResults: z.number().int().min(1).max(100).default(20),
+      caseSensitive: z.boolean().default(false),
+    }),
 
-  execute: async ({ query, path, maxResults, caseSensitive }) => {
-    return await toAgentToolResult(async () => {
-      const projectPath = await resolveExistingProjectPath(path);
-      const args = [
-        "--line-number",
-        "--no-heading",
-        "--with-filename",
-        "--color=never",
-        "--fixed-strings",
-        ...ignoredGlobs.flatMap((glob) => ["--glob", glob]),
-      ];
+    execute: async ({ query, path, maxResults, caseSensitive }) => {
+      return await toAgentToolResult(async () =>
+        await executeToolWithState({
+          toolName: "searchFiles",
+          tracker: options?.executionTracker,
+          run: async () => {
+            const projectPath = await resolveExistingProjectPath(path);
+            const args = [
+              "--line-number",
+              "--no-heading",
+              "--with-filename",
+              "--color=never",
+              "--fixed-strings",
+              ...ignoredGlobs.flatMap((glob) => ["--glob", glob]),
+            ];
 
-      if (!caseSensitive) {
-        args.push("--ignore-case");
-      }
+            if (!caseSensitive) {
+              args.push("--ignore-case");
+            }
 
-      args.push(query, projectPath.absolutePath);
+            args.push(query, projectPath.absolutePath);
 
-      const result = await execa("rg", args, {
-        reject: false,
-      });
+            const result = await execa("rg", args, {
+              reject: false,
+            });
 
-      if (result.exitCode === 1) {
-        return {
-          matches: [],
-        };
-      }
+            if (result.exitCode === 1) {
+              return {
+                matches: [],
+              };
+            }
 
-      if (result.exitCode !== 0) {
-        throw new Error(result.stderr || `rg failed with exit code ${result.exitCode}`);
-      }
+            if (result.exitCode !== 0) {
+              throw new Error(result.stderr || `rg failed with exit code ${result.exitCode}`);
+            }
 
-      const matches = result.stdout
-        .split("\n")
-        .filter(Boolean)
-        .slice(0, maxResults)
-        .map((line) => parseRipgrepLine(line, projectPath.root))
-        .filter((match): match is SearchMatch => match !== null);
+            const matches = result.stdout
+              .split("\n")
+              .filter(Boolean)
+              .slice(0, maxResults)
+              .map((line) => parseRipgrepLine(line, projectPath.root))
+              .filter((match): match is SearchMatch => match !== null);
 
-      return {
-        matches,
-      };
-    });
-  },
-});
+            return {
+              matches,
+            };
+          },
+        }),
+      );
+    },
+  });
+}
+
+export const searchFilesTool = createSearchFilesTool();

@@ -4,8 +4,8 @@
 
 ## Runtime 和执行状态
 
-- [ ] 把 Execution State Tracking 从命令执行扩展到所有 tool。
-  现在只追踪 `runCommand`，后面可以覆盖 `readFile`、`editFile`、`applyPatch`、`getDiff` 等工具，这样每个 tool call 都有统一的生命周期记录。
+- [x] 把 Execution State Tracking 从命令执行扩展到所有 tool。
+  现在已覆盖所有 AI SDK tool wrapper。`runCommand` 保留 policy 和 approval 的细状态，其他工具使用 `created -> running -> completed / failed`。
 
 - [ ] 为 execution record 增加更完整的时间信息。
   目前只有 `startedAt`、`completedAt` 和 `history`。后面可以补 `durationMs`、每个阶段耗时、失败阶段等字段，方便做调试和性能分析。

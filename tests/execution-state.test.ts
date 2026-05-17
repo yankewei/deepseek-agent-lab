@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { executeCommandWithPolicy } from "../src/command-executor.js";
 import {
   createExecutionTracker,
+  executeToolWithState,
   type ExecutionEvent,
   type ExecutionTracker,
 } from "../src/execution-state.js";
@@ -214,5 +215,48 @@ describe("execution state tracking", () => {
       status: "created",
       history: [{ status: "created" }],
     });
+  });
+
+  it("tracks generic tool execution", async () => {
+    const tracker = createTestTracker();
+
+    const result = await executeToolWithState({
+      toolName: "listFiles",
+      tracker,
+      run: async () => ({ files: ["index.ts"] }),
+    });
+
+    const [record] = tracker.listRecords();
+    expect(result).toEqual({ files: ["index.ts"] });
+    expect(record).toMatchObject({
+      id: "exec_1",
+      kind: "tool",
+      toolName: "listFiles",
+      status: "completed",
+    });
+    expect(recordStatuses(tracker)).toEqual(["created", "running", "completed"]);
+  });
+
+  it("tracks generic tool failures", async () => {
+    const tracker = createTestTracker();
+
+    await expect(
+      executeToolWithState({
+        toolName: "readFile",
+        tracker,
+        run: async () => {
+          throw new Error("read failed");
+        },
+      }),
+    ).rejects.toThrow(/read failed/);
+
+    const [record] = tracker.listRecords();
+    expect(record).toMatchObject({
+      kind: "tool",
+      toolName: "readFile",
+      status: "failed",
+      error: "read failed",
+    });
+    expect(recordStatuses(tracker)).toEqual(["created", "running", "failed"]);
   });
 });

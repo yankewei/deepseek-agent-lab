@@ -2,6 +2,7 @@ import { tool } from "ai";
 import { execa } from "execa";
 import { z } from "zod";
 import { toAgentToolResult } from "../agent-tool-result.js";
+import { executeToolWithState, type ExecutionTracker } from "../execution-state.js";
 
 type DiffMode = "stat" | "name-only" | "full";
 
@@ -43,14 +44,24 @@ export async function getDiff(
   };
 }
 
-export const getDiffTool = tool({
-  description: "Show the current git diff in a read-only mode",
+export function createGetDiffTool(options?: { executionTracker?: ExecutionTracker }) {
+  return tool({
+    description: "Show the current git diff in a read-only mode",
 
-  inputSchema: z.object({
-    mode: z.enum(["stat", "name-only", "full"]).default("stat"),
-  }),
+    inputSchema: z.object({
+      mode: z.enum(["stat", "name-only", "full"]).default("stat"),
+    }),
 
-  execute: async ({ mode }) => {
-    return await toAgentToolResult(async () => await getDiff({ mode }));
-  },
-});
+    execute: async ({ mode }) => {
+      return await toAgentToolResult(async () =>
+        await executeToolWithState({
+          toolName: "getDiff",
+          tracker: options?.executionTracker,
+          run: async () => await getDiff({ mode }),
+        }),
+      );
+    },
+  });
+}
+
+export const getDiffTool = createGetDiffTool();
