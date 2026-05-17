@@ -209,6 +209,24 @@ Each event is shaped like:
 The CLI wires this into `runCommand`, so command execution can be observed as it
 moves through policy evaluation, approval, running, completion, or failure.
 
+## CLI Output
+
+The CLI groups runtime output into sections so it is easier to scan:
+
+```text
+AI THINKING
+TOOL CALL
+AI RESPONSE
+```
+
+This keeps tool activity, model reasoning summaries, and the final response
+visually separate. Debug mode shows every runtime event, including execution
+events, tool results, step boundaries, and token usage:
+
+```bash
+DEBUG=1 pnpm start "列出当前项目文件"
+```
+
 ## Human-in-the-loop Approval
 
 Commands with a `prompt` policy decision require user approval before they run.

@@ -1,10 +1,17 @@
 import "dotenv/config";
 import { streamText, stepCountIs } from "ai";
 import { deepseek } from "@ai-sdk/deepseek";
+import {
+  formatExecutionEvent,
+  formatSection,
+  formatValue,
+  getStreamText,
+} from "./src/cli-output.js";
 import { createExecutionTracker } from "./src/execution-state.js";
 import { createTools } from "./src/tools/index.js";
 
 const userPrompt = process.argv.slice(2).join(" ").trim();
+const debug = process.env.DEBUG === "1";
 
 if (!userPrompt) {
   console.error('Usage: pnpm start "请分析当前项目"');
@@ -13,17 +20,9 @@ if (!userPrompt) {
 
 const executionTracker = createExecutionTracker({
   onEvent(event) {
-    console.log("\n");
-    console.log("📡 EXECUTION EVENT");
-    console.log(event.record.status);
-    console.log({
-      id: event.record.id,
-      command: event.record.normalizedCommand ?? event.record.command,
-      policyDecision: event.record.policyDecision,
-      exitCode: event.record.exitCode,
-      error: event.record.error,
-    });
-    console.log("\n");
+    if (debug) {
+      console.log(formatExecutionEvent(event.record));
+    }
   },
 });
 
@@ -71,48 +70,160 @@ If a command is blocked, explain what you were trying to learn and choose a safe
   stopWhen: stepCountIs(10),
 });
 
+let textSectionOpen = false;
+let reasoningSectionOpen = false;
+
+function closeOpenStreamSection() {
+  if (textSectionOpen || reasoningSectionOpen) {
+    process.stdout.write("\n");
+    textSectionOpen = false;
+    reasoningSectionOpen = false;
+  }
+}
+
 for await (const event of result.fullStream) {
   switch (event.type) {
+    case "start": {
+      if (debug) {
+        console.log(formatSection("🚀 RUN STARTED"));
+      }
+
+      break;
+    }
+
+    case "finish": {
+      closeOpenStreamSection();
+
+      if (debug) {
+        console.log(
+          formatSection(
+            "🏁 RUN FINISHED",
+            formatValue({
+              finishReason: event.finishReason,
+              usage: event.totalUsage,
+            }),
+          ),
+        );
+      }
+
+      break;
+    }
+
+    case "reasoning-start": {
+      closeOpenStreamSection();
+
+      break;
+    }
+
+    case "reasoning-delta": {
+      if (!reasoningSectionOpen) {
+        closeOpenStreamSection();
+        console.log(formatSection("🧠 AI THINKING"));
+        reasoningSectionOpen = true;
+      }
+
+      process.stdout.write(getStreamText(event));
+
+      break;
+    }
+
+    case "reasoning-end": {
+      closeOpenStreamSection();
+
+      break;
+    }
+
+    case "text-start": {
+      closeOpenStreamSection();
+
+      break;
+    }
+
     case "text-delta": {
-      process.stdout.write(event.text);
+      if (!textSectionOpen) {
+        closeOpenStreamSection();
+        console.log(formatSection("💬 AI RESPONSE"));
+        textSectionOpen = true;
+      }
+
+      process.stdout.write(getStreamText(event));
+
+      break;
+    }
+
+    case "text-end": {
+      closeOpenStreamSection();
 
       break;
     }
 
     case "tool-call": {
-      console.log("\n");
-
-      console.log("🔧 TOOL CALL");
-
-      console.log(event.toolName);
-
-      console.log(event.input);
-
-      console.log("\n");
+      closeOpenStreamSection();
+      console.log(
+        formatSection(
+          `🔧 TOOL CALL: ${event.toolName}`,
+          formatValue({
+            input: event.input,
+            toolCallId: event.toolCallId,
+          }),
+        ),
+      );
 
       break;
     }
 
     case "tool-result": {
-      console.log("\n");
+      closeOpenStreamSection();
 
-      console.log("✅ TOOL RESULT");
+      if (debug) {
+        console.log(
+          formatSection(
+            `✅ TOOL RESULT: ${event.toolName}`,
+            formatValue({
+              output: event.output,
+              toolCallId: event.toolCallId,
+            }),
+          ),
+        );
+      }
 
-      console.log(event.toolName);
+      break;
+    }
 
-      console.log(event.output);
+    case "tool-error": {
+      closeOpenStreamSection();
 
-      console.log("\n");
+      if (debug) {
+        console.log(
+          formatSection(
+            `❌ TOOL ERROR: ${event.toolName}`,
+            formatValue({
+              error: event.error,
+              toolCallId: event.toolCallId,
+            }),
+          ),
+        );
+      }
 
       break;
     }
 
     case "start-step": {
-      console.log("\n");
+      closeOpenStreamSection();
 
-      console.log("🧠 NEW STEP");
+      if (debug) {
+        console.log(formatSection("🧭 AI STEP"));
+      }
 
-      console.log("\n");
+      break;
+    }
+
+    case "finish-step": {
+      closeOpenStreamSection();
+
+      if (debug) {
+        console.log(formatSection("✓ STEP FINISHED"));
+      }
 
       break;
     }
