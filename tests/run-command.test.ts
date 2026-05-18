@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { executeCommandWithPolicy } from "../src/command-executor.js";
+import { createRuntimeCommandPolicy } from "../src/policy.js";
 
 describe("executeCommandWithPolicy", () => {
   it("runs allowed commands without approval", async () => {
@@ -40,13 +41,20 @@ describe("executeCommandWithPolicy", () => {
           subject: "pnpm install",
           riskLevel: "medium",
           policyReason: "Dependency command requires user approval.",
+          suggestedPolicyAmendment: {
+            type: "allow-command-prefix",
+            prefix: "pnpm install",
+          },
           details: {
             Command: "pnpm install",
             Reason: "sync dependencies",
           },
         });
 
-        return false;
+        return {
+          decision: "deny",
+          reason: "Not now.",
+        };
       },
     );
 
@@ -62,7 +70,7 @@ describe("executeCommandWithPolicy", () => {
       { command: "pnpm add -D vitest", reason: "install test framework" },
       async (request) => {
         expect(request.details.Command).toBe("pnpm add -D vitest");
-        return true;
+        return { decision: "approve_once" };
       },
       async (command, args) => ({
         stdout: `${command} ${args.join(" ")}`,
@@ -80,11 +88,65 @@ describe("executeCommandWithPolicy", () => {
     });
   });
 
+  it("remembers approved command prefixes for the current runtime", async () => {
+    const runtimePolicy = createRuntimeCommandPolicy();
+    let approvalRequests = 0;
+
+    const firstResult = await executeCommandWithPolicy(
+      { command: "pnpm add -D vitest", reason: "install test framework" },
+      async (request) => {
+        approvalRequests += 1;
+        expect(request.suggestedPolicyAmendment).toEqual({
+          type: "allow-command-prefix",
+          prefix: "pnpm add",
+        });
+
+        return {
+          decision: "always_allow_command_prefix",
+          policyAmendment: request.suggestedPolicyAmendment,
+        };
+      },
+      async (command, args) => ({
+        stdout: `${command} ${args.join(" ")}`,
+        stderr: "",
+        exitCode: 0,
+      }),
+      undefined,
+      runtimePolicy,
+    );
+
+    const secondResult = await executeCommandWithPolicy(
+      { command: "pnpm add zod" },
+      async () => {
+        throw new Error("approval should not be requested");
+      },
+      async (command, args) => ({
+        stdout: `${command} ${args.join(" ")}`,
+        stderr: "",
+        exitCode: 0,
+      }),
+      undefined,
+      runtimePolicy,
+    );
+
+    expect(approvalRequests).toBe(1);
+    expect(firstResult).toMatchObject({
+      approved: true,
+      approvalRequired: true,
+      stdout: "pnpm add -D vitest",
+    });
+    expect(secondResult).toMatchObject({
+      approved: false,
+      approvalRequired: false,
+      stdout: "pnpm add zod",
+    });
+  });
+
   it("rejects forbidden commands without execution", async () => {
     await expect(
       executeCommandWithPolicy(
         { command: "cat package.json" },
-        async () => true,
+        async () => ({ decision: "approve_once" }),
         async () => {
           throw new Error("command should not execute");
         },

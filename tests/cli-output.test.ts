@@ -4,7 +4,7 @@ import {
   formatSection,
   getStreamText,
 } from "../src/cli-output.js";
-import type { ExecutionRecord } from "../src/execution-state.js";
+import type { ExecutionEvent } from "../src/execution-state.js";
 
 describe("CLI output formatting", () => {
   it("formats titled sections", () => {
@@ -13,30 +13,38 @@ describe("CLI output formatting", () => {
   });
 
   it("formats execution events with the important fields", () => {
-    const record: ExecutionRecord = {
-      id: "exec_1",
-      kind: "tool",
-      toolName: "listFiles",
-      status: "completed",
-      startedAt: "2026-01-01T00:00:00.000Z",
-      completedAt: "2026-01-01T00:00:01.000Z",
-      history: [
-        {
-          status: "created",
-          at: "2026-01-01T00:00:00.000Z",
-        },
-        {
-          status: "completed",
-          at: "2026-01-01T00:00:01.000Z",
-        },
-      ],
+    const event: ExecutionEvent = {
+      type: "execution_state_changed",
+      sequence: 7,
+      record: {
+        id: "exec_1",
+        kind: "tool",
+        toolName: "listFiles",
+        status: "completed",
+        policyCode: "LOW_RISK_COMMAND_ALLOWED",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        completedAt: "2026-01-01T00:00:01.000Z",
+        history: [
+          {
+            status: "created",
+            at: "2026-01-01T00:00:00.000Z",
+          },
+          {
+            status: "completed",
+            at: "2026-01-01T00:00:01.000Z",
+          },
+        ],
+      },
     };
 
-    const output = formatExecutionEvent(record);
+    const output = formatExecutionEvent(event);
 
     expect(output).toContain("EXECUTION EVENT: completed");
     expect(output).toContain("listFiles");
     expect(output).toContain("exec_1");
+    expect(output).toContain("sequence");
+    expect(output).toContain("7");
+    expect(output).toContain("LOW_RISK_COMMAND_ALLOWED");
   });
 
   it("reads text from both AI SDK text field shapes", () => {

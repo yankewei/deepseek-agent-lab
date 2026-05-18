@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { CommandPolicyCode } from "./policy.js";
 
 export type ExecutionStatus =
   | "created"
@@ -24,7 +25,9 @@ export type ExecutionRecord = {
   status: ExecutionStatus;
   startedAt: string;
   completedAt?: string;
+  durationMs?: number;
   policyDecision?: "allow" | "prompt" | "forbidden";
+  policyCode?: CommandPolicyCode;
   policyReason?: string;
   normalizedCommand?: string;
   exitCode?: number;
@@ -45,6 +48,7 @@ export type CreateExecutionRecordInput =
 
 export type ExecutionEvent = {
   type: "execution_state_changed";
+  sequence: number;
   record: ExecutionRecord;
 };
 
@@ -58,6 +62,7 @@ export type ExecutionTracker = {
         | "status"
         | "completedAt"
         | "policyDecision"
+        | "policyCode"
         | "policyReason"
         | "normalizedCommand"
         | "exitCode"
@@ -76,6 +81,14 @@ function cloneRecord(record: ExecutionRecord) {
   };
 }
 
+function isTerminalStatus(status: ExecutionStatus) {
+  return status === "completed" || status === "denied" || status === "failed";
+}
+
+function calculateDurationMs(startedAt: string, completedAt: string) {
+  return Date.parse(completedAt) - Date.parse(startedAt);
+}
+
 export function createExecutionTracker(options?: {
   createId?: () => string;
   now?: () => Date;
@@ -85,10 +98,12 @@ export function createExecutionTracker(options?: {
   const now = options?.now ?? (() => new Date());
   const onEvent = options?.onEvent;
   const records = new Map<string, ExecutionRecord>();
+  let nextSequence = 1;
 
   function emit(record: ExecutionRecord) {
     onEvent?.({
       type: "execution_state_changed",
+      sequence: nextSequence++,
       record: cloneRecord(record),
     });
   }
@@ -128,8 +143,10 @@ export function createExecutionTracker(options?: {
         record.status = nextStatus;
         record.history.push({ status: nextStatus, at });
 
-        if (["completed", "denied", "failed"].includes(nextStatus)) {
-          record.completedAt = update.completedAt ?? at;
+        if (isTerminalStatus(nextStatus)) {
+          const completedAt = update.completedAt ?? at;
+          record.completedAt = completedAt;
+          record.durationMs = calculateDurationMs(record.startedAt, completedAt);
         }
       }
 

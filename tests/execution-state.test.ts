@@ -58,7 +58,9 @@ describe("execution state tracking", () => {
       id: "exec_1",
       command: " pnpm   typecheck ",
       status: "completed",
+      durationMs: 3000,
       policyDecision: "allow",
+      policyCode: "LOW_RISK_COMMAND_ALLOWED",
       normalizedCommand: "pnpm typecheck",
       exitCode: 0,
     });
@@ -70,7 +72,7 @@ describe("execution state tracking", () => {
 
     await executeCommandWithPolicy(
       { command: "pnpm add -D vitest", reason: "install test framework" },
-      async () => true,
+      async () => ({ decision: "approve_once" }),
       async () => ({
         stdout: "",
         stderr: "",
@@ -82,7 +84,9 @@ describe("execution state tracking", () => {
     const [record] = tracker.listRecords();
     expect(record).toMatchObject({
       status: "completed",
+      durationMs: 5000,
       policyDecision: "prompt",
+      policyCode: "DEPENDENCY_CHANGE_REQUIRES_APPROVAL",
       reason: "install test framework",
     });
     expect(recordStatuses(tracker)).toEqual([
@@ -100,7 +104,7 @@ describe("execution state tracking", () => {
 
     const result = await executeCommandWithPolicy(
       { command: "pnpm install", reason: "sync dependencies" },
-      async () => false,
+      async () => ({ decision: "deny" }),
       async () => {
         throw new Error("command should not execute");
       },
@@ -115,6 +119,7 @@ describe("execution state tracking", () => {
       executionId: "exec_1",
     });
     expect(record.status).toBe("denied");
+    expect(record.durationMs).toBe(3000);
     expect(recordStatuses(tracker)).toEqual([
       "created",
       "policy_evaluated",
@@ -129,7 +134,7 @@ describe("execution state tracking", () => {
     await expect(
       executeCommandWithPolicy(
         { command: "cat package.json" },
-        async () => true,
+        async () => ({ decision: "approve_once" }),
         async () => {
           throw new Error("command should not execute");
         },
@@ -140,7 +145,9 @@ describe("execution state tracking", () => {
     const [record] = tracker.listRecords();
     expect(record).toMatchObject({
       status: "failed",
+      durationMs: 2000,
       policyDecision: "forbidden",
+      policyCode: "COMMAND_NOT_ALLOWED",
       error: "Command is not allowed: cat package.json",
     });
     expect(recordStatuses(tracker)).toEqual(["created", "policy_evaluated", "failed"]);
@@ -152,7 +159,7 @@ describe("execution state tracking", () => {
     await expect(
       executeCommandWithPolicy(
         { command: "pnpm test" },
-        async () => true,
+        async () => ({ decision: "approve_once" }),
         async () => {
           throw new Error("test runner crashed");
         },
@@ -163,7 +170,9 @@ describe("execution state tracking", () => {
     const [record] = tracker.listRecords();
     expect(record).toMatchObject({
       status: "failed",
+      durationMs: 3000,
       policyDecision: "allow",
+      policyCode: "LOW_RISK_COMMAND_ALLOWED",
       error: "test runner crashed",
     });
     expect(recordStatuses(tracker)).toEqual(["created", "policy_evaluated", "running", "failed"]);
@@ -197,6 +206,26 @@ describe("execution state tracking", () => {
       "policy_evaluated",
       "running",
       "completed",
+    ]);
+    expect(events.map((event) => event.sequence)).toEqual([1, 2, 3, 4]);
+  });
+
+  it("assigns increasing event sequence numbers across records", () => {
+    const events: ExecutionEvent[] = [];
+    const tracker = createTestTrackerWithEvents(events);
+
+    const commandRecord = tracker.createRecord({ command: "pnpm test" });
+    const toolRecord = tracker.createRecord({ kind: "tool", toolName: "listFiles" });
+
+    tracker.updateRecord(commandRecord.id, { status: "running" });
+    tracker.updateRecord(toolRecord.id, { status: "running" });
+
+    expect(events.map((event) => event.sequence)).toEqual([1, 2, 3, 4]);
+    expect(events.map((event) => event.record.id)).toEqual([
+      "exec_1",
+      "exec_2",
+      "exec_1",
+      "exec_2",
     ]);
   });
 
@@ -233,6 +262,7 @@ describe("execution state tracking", () => {
       kind: "tool",
       toolName: "listFiles",
       status: "completed",
+      durationMs: 2000,
     });
     expect(recordStatuses(tracker)).toEqual(["created", "running", "completed"]);
   });
@@ -255,6 +285,7 @@ describe("execution state tracking", () => {
       kind: "tool",
       toolName: "readFile",
       status: "failed",
+      durationMs: 2000,
       error: "read failed",
     });
     expect(recordStatuses(tracker)).toEqual(["created", "running", "failed"]);

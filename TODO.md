@@ -7,8 +7,8 @@
 - [x] 把 Execution State Tracking 从命令执行扩展到所有 tool。
   现在已覆盖所有 AI SDK tool wrapper。`runCommand` 保留 policy 和 approval 的细状态，其他工具使用 `created -> running -> completed / failed`。
 
-- [ ] 为 execution record 增加更完整的时间信息。
-  目前只有 `startedAt`、`completedAt` 和 `history`。后面可以补 `durationMs`、每个阶段耗时、失败阶段等字段，方便做调试和性能分析。
+- [x] 为 execution record 增加更完整的时间信息。
+  目前已有 `startedAt`、`completedAt`、`durationMs` 和 `history`。后面可以继续补每个阶段耗时、失败阶段等字段，方便做调试和性能分析。
 
 - [ ] 做持久化的 execution history。
   当前记录只在内存里。后面可以写入本地 JSONL、SQLite 或项目内 `.agent/` 目录，用来支持历史回放、恢复和排查问题。
@@ -24,22 +24,22 @@
 - [ ] 增加更多事件类型。
   当前只有 `execution_state_changed`。后面可以拆成 `tool_call_started`、`approval_requested`、`approval_resolved`、`command_started`、`command_finished`、`tool_error` 等事件。
 
-- [ ] 给事件增加稳定的序号。
-  现在事件靠发生顺序理解。后面可以加 `sequence`，方便 UI、日志系统和测试按顺序消费事件。
+- [x] 给事件增加稳定的序号。
+  事件现在带有递增的 `sequence`，方便 UI、日志系统和测试按顺序消费事件。
 
 - [ ] 增加事件输出适配器。
   CLI 现在直接 `console.log`。后面可以做 console adapter、JSON adapter、WebSocket adapter，让不同应用层以不同形式消费事件。
 
 ## Approval UI 和 Human-in-the-loop
 
-- [ ] 支持更丰富的审批决策。
-  现在只有 approve once 和 deny。后面可以增加 allow once、always allow this command prefix、deny and remember 等选项。
+- [x] 支持更丰富的审批决策。
+  现在支持 approve once、always allow this command prefix 和 deny。后面可以继续增加 deny and remember 等选项。
 
-- [ ] 把审批结果建模成对象。
-  当前 `ApprovalPrompt` 返回 `boolean`。后面可以改成 `{ decision, reason?, policyAmendment? }`，这样能表达更丰富的用户选择。
+- [x] 把审批结果建模成对象。
+  `ApprovalPrompt` 现在返回 `{ decision, reason?, policyAmendment? }`，可以表达更丰富的用户选择。
 
-- [ ] 根据策略生成真实 risk level。
-  现在 dependency command 固定是 `medium`。后面可以由 policy engine 输出风险等级，比如读操作是 low，依赖安装是 medium，写入敏感路径是 high。
+- [x] 根据策略生成真实 risk level。
+  command policy 现在会为 prompt decision 输出 `riskLevel`，approval UI 只负责展示。
 
 - [ ] 支持审批超时和取消。
   当前 CLI 会一直等用户输入。后面可以增加 timeout、abort signal 和默认拒绝策略。
@@ -52,17 +52,20 @@
 - [ ] 把命令策略从硬编码升级为规则配置。
   现在 allow / prompt / forbidden 都写在 `policy.ts` 里。后面可以支持本地规则文件，比如 `agent-policy.json` 或 `.agent/rules.json`。
 
-- [ ] 支持 prefix rule。
-  现在只允许固定命令和几个依赖命令前缀。后面可以显式建模类似 Codex 的 prefix rule，让用户批准某类命令后复用规则。
+- [x] 支持 prefix rule。
+  现在支持进程内 command prefix rule，用户批准某类命令后可在当前运行中复用规则。
 
 - [ ] 增加 granular approval mode。
   当前没有全局审批模式。后面可以支持 `never`、`on-request`、`unless-trusted`、`granular` 这类模式，用来控制哪些请求能弹审批、哪些必须直接拒绝。
 
+- [x] 为统一策略层做类型命名准备。
+  已把 command-only 的 policy decision 类型抽成通用 `PolicyDecision<Code, Subject>`，`CommandPolicyDecision` 作为命令策略特化类型存在，保持行为不变，为后续文件、patch、网络策略迁移铺路。
+
 - [ ] 增加文件、patch、网络的统一策略判断。
   现在命令有 policy，文件路径和 patch 主要靠各自工具内部校验。后面可以抽成统一策略层，让每类动作都返回 allow / prompt / forbidden。
 
-- [ ] 给 policy decision 增加 machine-readable code。
-  现在主要是 `type` 和 `reason`。后面可以增加 `code`，比如 `COMMAND_NOT_ALLOWED`、`SHELL_OPERATOR_BLOCKED`、`DEPENDENCY_CHANGE_REQUIRES_APPROVAL`。
+- [x] 给 policy decision 增加 machine-readable code。
+  policy decision 现在同时包含 `type`、`code` 和 `reason`，例如 `COMMAND_NOT_ALLOWED`、`SHELL_OPERATOR_BLOCKED`、`DEPENDENCY_CHANGE_REQUIRES_APPROVAL`。
 
 ## AgentToolResult 和错误分类
 
@@ -133,7 +136,7 @@
 
 ## 文档和学习材料
 
-- [ ] 把学习路线整理成章节化文档。
+- [x] 把学习路线整理成章节化文档。
   README 现在是项目说明。后面可以单独写 `docs/learning-path.md`，按 Basic Agent Loop、Tools、Policy、Approval、State、Events、Results 展开。
 
 - [ ] 给每个核心模块补架构说明。

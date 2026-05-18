@@ -21,7 +21,7 @@ if (!userPrompt) {
 const executionTracker = createExecutionTracker({
   onEvent(event) {
     if (debug) {
-      console.log(formatExecutionEvent(event.record));
+      console.log(formatExecutionEvent(event));
     }
   },
 });

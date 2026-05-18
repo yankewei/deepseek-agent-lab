@@ -11,12 +11,32 @@ describe("requestApproval", () => {
       },
     };
 
-    const approved = await requestApproval(request, async (receivedRequest) => {
+    const approval = await requestApproval(request, async (receivedRequest) => {
       expect(receivedRequest).toEqual(request);
-      return true;
+      return { decision: "approve_once" };
     });
 
-    expect(approved).toBe(true);
+    expect(approval).toEqual({ decision: "approve_once" });
+  });
+
+  it("supports structured denial reasons", async () => {
+    const request: ApprovalRequest = {
+      action: "run-command",
+      title: "Run command",
+      details: {
+        Command: "pnpm install",
+      },
+    };
+
+    const approval = await requestApproval(request, async () => ({
+      decision: "deny",
+      reason: "Dependency changes are not allowed in this session.",
+    }));
+
+    expect(approval).toEqual({
+      decision: "deny",
+      reason: "Dependency changes are not allowed in this session.",
+    });
   });
 });
 
@@ -50,5 +70,25 @@ Options:
   y - approve once
   n - deny
 `);
+  });
+
+  it("formats suggested policy amendments as an approval option", () => {
+    expect(
+      formatApprovalRequest({
+        action: "run-command",
+        title: "Run command requiring approval",
+        subject: "pnpm add -D vitest",
+        riskLevel: "medium",
+        policyReason: "Dependency command requires user approval.",
+        suggestedPolicyAmendment: {
+          type: "allow-command-prefix",
+          prefix: "pnpm add",
+        },
+        details: {
+          Command: "pnpm add -D vitest",
+          Reason: "install test framework",
+        },
+      }),
+    ).toContain("a - always allow prefix: pnpm add");
   });
 });

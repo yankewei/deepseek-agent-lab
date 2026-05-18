@@ -1,7 +1,11 @@
 import { execa } from "execa";
 import { requestApproval, type ApprovalPrompt } from "./approval.js";
 import type { ExecutionTracker } from "./execution-state.js";
-import { evaluateCommandPolicy } from "./policy.js";
+import {
+  evaluateCommandPolicy,
+  getApprovableCommandPrefix,
+  type RuntimeCommandPolicy,
+} from "./policy.js";
 
 export type ExecuteRun = (
   command: string,
@@ -43,6 +47,7 @@ export async function executeCommandWithPolicy(
     };
   },
   tracker?: ExecutionTracker,
+  runtimePolicy?: RuntimeCommandPolicy,
 ): Promise<CommandExecutionResult> {
   const reason = input.reason?.trim();
   const record = tracker?.createRecord({
@@ -78,6 +83,7 @@ export async function executeCommandWithPolicy(
     updateRecord({
       status: "policy_evaluated",
       policyDecision: decision.type,
+      policyCode: decision.code,
       policyReason: decision.reason,
       normalizedCommand: decision.command,
     });
@@ -87,7 +93,10 @@ export async function executeCommandWithPolicy(
       throw new Error(decision.reason);
     }
 
-    if (decision.type === "prompt") {
+    let approvalRequired = decision.type === "prompt";
+    let approved = false;
+
+    if (decision.type === "prompt" && !runtimePolicy?.isCommandAllowedByPrefix(decision.command)) {
       if (!reason) {
         const error = `Approval reason is required for command: ${decision.command}`;
         recordFailure(error);
@@ -98,13 +107,21 @@ export async function executeCommandWithPolicy(
         status: "waiting_for_approval",
       });
 
-      const approved = await requestApproval(
+      const suggestedPolicyAmendment = getApprovableCommandPrefix(decision.command)
+        ? {
+            type: "allow-command-prefix" as const,
+            prefix: getApprovableCommandPrefix(decision.command) ?? decision.command,
+          }
+        : undefined;
+
+      const approval = await requestApproval(
         {
           action: "run-command",
           title: "Run command requiring approval",
           subject: decision.command,
-          riskLevel: "medium",
+          riskLevel: decision.riskLevel,
           policyReason: decision.reason,
+          suggestedPolicyAmendment,
           details: {
             Command: decision.command,
             Reason: reason,
@@ -113,9 +130,10 @@ export async function executeCommandWithPolicy(
         prompt,
       );
 
-      if (!approved) {
+      if (approval.decision === "deny") {
         updateRecord({
           status: "denied",
+          error: approval.reason,
         });
         terminalRecorded = true;
 
@@ -129,6 +147,18 @@ export async function executeCommandWithPolicy(
       updateRecord({
         status: "approved",
       });
+
+      approved = true;
+
+      if (approval.decision === "always_allow_command_prefix") {
+        const amendment = approval.policyAmendment ?? suggestedPolicyAmendment;
+
+        if (amendment?.type === "allow-command-prefix") {
+          runtimePolicy?.allowCommandPrefix(amendment.prefix);
+        }
+      }
+    } else if (decision.type === "prompt") {
+      approvalRequired = false;
     }
 
     updateRecord({
@@ -145,8 +175,8 @@ export async function executeCommandWithPolicy(
     terminalRecorded = true;
 
     return withExecutionId({
-      approved: decision.type === "prompt",
-      approvalRequired: decision.type === "prompt",
+      approved,
+      approvalRequired,
       stdout: result.stdout,
       stderr: result.stderr,
       exitCode: result.exitCode,

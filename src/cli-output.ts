@@ -1,5 +1,5 @@
 import { inspect } from "node:util";
-import type { ExecutionRecord } from "./execution-state.js";
+import type { ExecutionEvent } from "./execution-state.js";
 
 const divider = "─".repeat(72);
 
@@ -25,15 +25,19 @@ export function formatSection(title: string, body?: string) {
   ].join("\n");
 }
 
-export function formatExecutionEvent(record: ExecutionRecord) {
+export function formatExecutionEvent(event: ExecutionEvent) {
+  const { record } = event;
+
   return formatSection(
     `📡 EXECUTION EVENT: ${record.status}`,
     formatValue({
+      sequence: event.sequence,
       id: record.id,
       kind: record.kind,
       toolName: record.toolName,
       command: record.normalizedCommand ?? record.command,
       policyDecision: record.policyDecision,
+      policyCode: record.policyCode,
       exitCode: record.exitCode,
       error: record.error,
     }),

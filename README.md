@@ -175,6 +175,9 @@ created
 -> completed / failed
 ```
 
+Execution records also include `durationMs` after they reach a terminal state
+such as `completed`, `denied`, or `failed`.
+
 For now, this is intentionally small:
 
 - command execution is tracked
@@ -202,9 +205,13 @@ Each event is shaped like:
 ```ts
 {
   type: "execution_state_changed",
+  sequence: 1,
   record: ExecutionRecord
 }
 ```
+
+`sequence` is a process-local increasing number. Consumers can use it to keep
+events in a stable order even when multiple records are active.
 
 The CLI wires this into `runCommand`, so command execution can be observed as it
 moves through policy evaluation, approval, running, completion, or failure.
@@ -239,6 +246,10 @@ The approval request is structured so the UI can show the important context:
   subject: "pnpm add -D vitest",
   riskLevel: "medium",
   policyReason: "Dependency command requires user approval.",
+  suggestedPolicyAmendment: {
+    type: "allow-command-prefix",
+    prefix: "pnpm add"
+  },
   details: {
     Command: "pnpm add -D vitest",
     Reason: "install test framework"
@@ -262,10 +273,12 @@ Details:
 
 Options:
   y - approve once
+  a - always allow prefix: pnpm add
   n - deny
 ```
 
-Only `y` approves. Any other answer denies by default.
+`y` approves one command. `a` approves this command and remembers the suggested
+command prefix for the current process. Any other answer denies by default.
 
 ## Agent Tool Result
 

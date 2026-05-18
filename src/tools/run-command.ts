@@ -9,6 +9,7 @@ import { executeCommandWithPolicy, type ExecuteRun } from "../command-executor.j
 import type { ExecutionTracker } from "../execution-state.js";
 import type { ApprovalPrompt } from "../approval.js";
 import { classifyCommandExecutionError } from "../errors.js";
+import { createRuntimeCommandPolicy } from "../policy.js";
 
 type RunCommandToolData =
   | {
@@ -23,6 +24,8 @@ export function createRunCommandTool(options?: {
   prompt?: ApprovalPrompt;
   executeRun?: ExecuteRun;
 }) {
+  const runtimePolicy = createRuntimeCommandPolicy();
+
   return tool({
     description: "Run a project command allowed by policy, asking for approval when required",
 
@@ -38,6 +41,7 @@ export function createRunCommandTool(options?: {
           options?.prompt,
           options?.executeRun,
           options?.executionTracker,
+          runtimePolicy,
         );
 
         if ("skipped" in result) {

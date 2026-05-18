@@ -36,7 +36,10 @@ describe("runCommandTool", () => {
 
   it("returns a skipped AgentToolResult when approval is denied", async () => {
     const runCommandTool = createRunCommandTool({
-      prompt: async () => false,
+      prompt: async () => ({
+        decision: "deny",
+        reason: "Not now.",
+      }),
     });
 
     const result = await runCommandTool.execute?.(
@@ -50,6 +53,51 @@ describe("runCommandTool", () => {
       meta: {
         approvalRequired: true,
         skipped: true,
+      },
+    });
+  });
+
+  it("reuses approved command prefixes within one tool instance", async () => {
+    let approvalRequests = 0;
+    const runCommandTool = createRunCommandTool({
+      prompt: async (request) => {
+        approvalRequests += 1;
+
+        return {
+          decision: "always_allow_command_prefix",
+          policyAmendment: request.suggestedPolicyAmendment,
+        };
+      },
+      executeRun: async (command, args) => ({
+        stdout: `${command} ${args.join(" ")}`,
+        stderr: "",
+        exitCode: 0,
+      }),
+    });
+
+    const firstResult = await runCommandTool.execute?.(
+      { command: "pnpm add -D vitest", reason: "install test framework" },
+      toolExecutionOptions,
+    );
+    const secondResult = await runCommandTool.execute?.(
+      { command: "pnpm add zod" },
+      toolExecutionOptions,
+    );
+
+    expect(approvalRequests).toBe(1);
+    expect(firstResult).toMatchObject({
+      ok: true,
+      meta: {
+        approvalRequired: true,
+      },
+    });
+    expect(secondResult).toMatchObject({
+      ok: true,
+      data: {
+        stdout: "pnpm add zod",
+      },
+      meta: {
+        approvalRequired: false,
       },
     });
   });

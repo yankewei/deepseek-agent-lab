@@ -1,16 +1,31 @@
 import { stdin as input, stdout as output } from "node:process";
 import { createInterface } from "node:readline/promises";
+import type { RiskLevel } from "./policy.js";
 
 export type ApprovalRequest = {
   action: string;
   title: string;
   subject?: string;
-  riskLevel?: "low" | "medium" | "high";
+  riskLevel?: RiskLevel;
   policyReason?: string;
+  suggestedPolicyAmendment?: ApprovalPolicyAmendment;
   details: Record<string, string>;
 };
 
-export type ApprovalPrompt = (request: ApprovalRequest) => Promise<boolean>;
+export type ApprovalDecision = "approve_once" | "always_allow_command_prefix" | "deny";
+
+export type ApprovalPolicyAmendment = {
+  type: "allow-command-prefix";
+  prefix: string;
+};
+
+export type ApprovalResult = {
+  decision: ApprovalDecision;
+  reason?: string;
+  policyAmendment?: ApprovalPolicyAmendment;
+};
+
+export type ApprovalPrompt = (request: ApprovalRequest) => Promise<ApprovalResult>;
 
 export function formatApprovalRequest(request: ApprovalRequest) {
   const lines = [
@@ -42,23 +57,43 @@ export function formatApprovalRequest(request: ApprovalRequest) {
     }
   }
 
-  lines.push("", "Options:", "  y - approve once", "  n - deny", "");
+  lines.push("", "Options:", "  y - approve once");
+
+  if (request.suggestedPolicyAmendment) {
+    lines.push(`  a - always allow prefix: ${request.suggestedPolicyAmendment.prefix}`);
+  }
+
+  lines.push("  n - deny", "");
 
   return lines.join("\n");
 }
 
 export async function promptForApproval(request: ApprovalRequest) {
   if (!input.isTTY) {
-    return false;
+    return {
+      decision: "deny" as const,
+      reason: "Approval prompt requires an interactive terminal.",
+    };
   }
 
   const readline = createInterface({ input, output });
 
   try {
     output.write(formatApprovalRequest(request));
-    const answer = await readline.question("Approve once? [y/N] ");
+    const answer = await readline.question("Approve? [y/a/N] ");
 
-    return answer.trim().toLowerCase() === "y";
+    if (answer.trim().toLowerCase() === "y") {
+      return { decision: "approve_once" as const };
+    }
+
+    if (answer.trim().toLowerCase() === "a" && request.suggestedPolicyAmendment) {
+      return {
+        decision: "always_allow_command_prefix" as const,
+        policyAmendment: request.suggestedPolicyAmendment,
+      };
+    }
+
+    return { decision: "deny" as const };
   } finally {
     readline.close();
   }
