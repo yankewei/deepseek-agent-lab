@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "tsx index.ts",
+    "build:bin": "node scripts/build-binary.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check": "pnpm typecheck && pnpm test"

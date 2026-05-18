@@ -7,7 +7,14 @@ describe("command policy", () => {
       type: "allow",
       code: "LOW_RISK_COMMAND_ALLOWED",
       command: "pnpm typecheck",
-      reason: "Known low-risk validation command.",
+      reason: "Known low-risk project command.",
+    });
+
+    expect(evaluateCommandPolicy("pnpm build:bin")).toEqual({
+      type: "allow",
+      code: "LOW_RISK_COMMAND_ALLOWED",
+      command: "pnpm build:bin",
+      reason: "Known low-risk project command.",
     });
 
     expect(evaluateCommandPolicy("pnpm add -D vitest")).toEqual({

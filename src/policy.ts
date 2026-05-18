@@ -1,5 +1,11 @@
 const blockedShellTokens = ["&&", "||", ";", "|", ">", "<", "`", "$("];
-const allowedCommands = new Set(["pwd", "pnpm test", "pnpm typecheck", "pnpm --version"]);
+const allowedCommands = new Set([
+  "pwd",
+  "pnpm test",
+  "pnpm typecheck",
+  "pnpm build:bin",
+  "pnpm --version",
+]);
 const approvableCommandPrefixes = ["pnpm install", "pnpm add", "pnpm remove"];
 
 export type RiskLevel = "low" | "medium" | "high";
@@ -96,7 +102,7 @@ export function evaluateCommandPolicy(command: string): CommandPolicyDecision {
       type: "allow",
       code: "LOW_RISK_COMMAND_ALLOWED",
       command: normalized,
-      reason: "Known low-risk validation command.",
+      reason: "Known low-risk project command.",
     };
   }
 

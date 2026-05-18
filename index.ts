@@ -58,7 +58,7 @@ Use editFile for small, exact replacements in project files, then run validation
 Use applyPatch for multi-file changes, then run validation when appropriate.
 Use getDiff after edits to inspect changed files before summarizing.
 Use runCommand for command execution.
-runCommand can run these exact commands without approval: pwd, pnpm test, pnpm typecheck, pnpm --version.
+runCommand can run these exact commands without approval: pwd, pnpm test, pnpm typecheck, pnpm build:bin, pnpm --version.
 runCommand asks for approval before dependency changes such as pnpm install, pnpm add, or pnpm remove; include a clear reason.
 If a command is blocked, explain what you were trying to learn and choose a safer command.
 `,

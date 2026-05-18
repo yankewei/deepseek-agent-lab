@@ -41,6 +41,13 @@ Run the agent:
 pnpm start "请分析这个项目"
 ```
 
+Build a standalone binary for the current platform:
+
+```bash
+pnpm build:bin
+./dist/deepseek-agent-lab "请分析这个项目"
+```
+
 Run checks:
 
 ```bash
@@ -50,11 +57,43 @@ pnpm check
 ## Scripts
 
 ```bash
-pnpm start "task"   # Run the coding agent
-pnpm typecheck      # Type-check the project
-pnpm test           # Run Vitest tests
-pnpm check          # Type-check and test
+pnpm start "task"        # Run the coding agent
+pnpm build:bin           # Build a standalone binary in dist/
+pnpm typecheck           # Type-check the project
+pnpm test                # Run Vitest tests
+pnpm check               # Type-check and test
 ```
+
+## Binary Build
+
+The binary build uses Bun's standalone executable compiler. It bundles the
+TypeScript entrypoint and runtime dependencies into one executable for the
+current operating system and CPU architecture.
+
+```bash
+pnpm build:bin
+```
+
+The default output path is:
+
+```text
+dist/deepseek-agent-lab
+```
+
+On Windows, the output file is:
+
+```text
+dist/deepseek-agent-lab.exe
+```
+
+To customize the output path:
+
+```bash
+OUTFILE=dist/agent pnpm build:bin
+```
+
+The executable still reads configuration from the environment, so keep using
+`DEEPSEEK_API_KEY` or a local `.env` file when running it.
 
 ## Tools
 
@@ -93,6 +132,7 @@ Current command policy:
 pwd                  -> allow
 pnpm test            -> allow
 pnpm typecheck       -> allow
+pnpm build:bin       -> allow
 pnpm --version       -> allow
 pnpm install         -> prompt
 pnpm add ...         -> prompt
@@ -122,6 +162,7 @@ Write tools additionally block sensitive or generated paths:
 pwd
 pnpm test
 pnpm typecheck
+pnpm build:bin
 pnpm --version
 ```
 
