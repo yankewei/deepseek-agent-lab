@@ -1,4 +1,4 @@
-# deepseek-agent-lab
+# ds-coding-agent
 
 A small TypeScript lab for learning how to build a coding agent.
 
@@ -45,7 +45,7 @@ Build a standalone binary for the current platform:
 
 ```bash
 deno task build:bin
-./dist/deepseek-agent-lab "请分析这个项目"
+./dist/ds-coding-agent "请分析这个项目"
 ```
 
 Run checks:
@@ -75,13 +75,13 @@ deno task build:bin
 The default output path is:
 
 ```text
-dist/deepseek-agent-lab
+dist/ds-coding-agent
 ```
 
 On Windows, the output file is:
 
 ```text
-dist/deepseek-agent-lab.exe
+dist/ds-coding-agent.exe
 ```
 
 To customize the output path:

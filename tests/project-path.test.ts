@@ -21,7 +21,7 @@ describe("project path resolver", () => {
 
   it("rejects symlinks that point outside the current project", async () => {
     await withTempProject(async (projectRoot) => {
-      const outsideFile = await Deno.makeTempFile({ prefix: "deepseek-agent-lab-outside-" });
+      const outsideFile = await Deno.makeTempFile({ prefix: "ds-coding-agent-outside-" });
       await Deno.writeTextFile(outsideFile, "secret\n");
       await Deno.symlink(outsideFile, join(projectRoot, "linked-secret.txt"));
 

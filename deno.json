@@ -1,5 +1,5 @@
 {
-  "name": "@local/deepseek-agent-lab",
+  "name": "@local/ds-coding-agent",
   "version": "1.0.0",
   "exports": "./index.ts",
   "tasks": {
@@ -9,7 +9,7 @@
     "lint": "deno lint",
     "fmt": "deno fmt",
     "check": "deno task typecheck && deno task test",
-    "build:bin": "deno compile --allow-all --output dist/deepseek-agent-lab index.ts"
+    "build:bin": "deno compile --allow-all --output dist/ds-coding-agent index.ts"
   },
   "imports": {
     "ai": "npm:ai@^6.0.184",

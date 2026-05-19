@@ -1,6 +1,6 @@
 export async function withTempProject(run: (projectRoot: string) => Promise<void>) {
   const originalCwd = Deno.cwd();
-  const projectRoot = await Deno.makeTempDir({ prefix: "deepseek-agent-lab-" });
+  const projectRoot = await Deno.makeTempDir({ prefix: "ds-coding-agent-" });
 
   try {
     Deno.chdir(projectRoot);
