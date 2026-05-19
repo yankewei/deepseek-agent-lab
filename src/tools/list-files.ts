@@ -1,10 +1,9 @@
 import { tool } from "ai";
-import { readdir } from "node:fs/promises";
-import path from "node:path";
+import { join, relative } from "@std/path";
 import { z } from "zod";
-import { toAgentToolResult } from "../agent-tool-result.js";
-import { executeToolWithState, type ExecutionTracker } from "../execution-state.js";
-import { resolveExistingProjectPath } from "../project-path.js";
+import { toAgentToolResult } from "../agent-tool-result.ts";
+import { executeToolWithState, type ExecutionTracker } from "../execution-state.ts";
+import { resolveExistingProjectPath } from "../project-path.ts";
 
 const ignoredDirectories = new Set([".git", "node_modules", "dist", "build", ".next"]);
 
@@ -17,21 +16,21 @@ async function listProjectFiles(directory: string, maxDepth: number) {
       return;
     }
 
-    const entries = await readdir(currentDirectory, { withFileTypes: true });
+    const entries = await Array.fromAsync(Deno.readDir(currentDirectory));
 
     for (const entry of entries) {
-      if (entry.isDirectory() && ignoredDirectories.has(entry.name)) {
+      if (entry.isDirectory && ignoredDirectories.has(entry.name)) {
         continue;
       }
 
-      const fullPath = path.join(currentDirectory, entry.name);
-      const relativePath = path.relative(projectPath.root, fullPath);
+      const fullPath = join(currentDirectory, entry.name);
+      const rel = relative(projectPath.root, fullPath);
 
-      if (entry.isDirectory()) {
-        files.push(`${relativePath}/`);
+      if (entry.isDirectory) {
+        files.push(`${rel}/`);
         await walk(fullPath, depth + 1);
       } else {
-        files.push(relativePath);
+        files.push(rel);
       }
     }
   }

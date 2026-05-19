@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { getDiff } from "../src/tools/get-diff.js";
+import { describe, it } from "@std/testing/bdd";
+import { expect } from "@std/expect";
+import { getDiff } from "../src/tools/get-diff.ts";
 
 describe("getDiff", () => {
   it("maps stat mode to git diff --stat", async () => {

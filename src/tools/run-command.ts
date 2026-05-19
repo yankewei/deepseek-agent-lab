@@ -4,12 +4,12 @@ import {
   errorAgentToolResult,
   okAgentToolResult,
   type AgentToolResult,
-} from "../agent-tool-result.js";
-import { executeCommandWithPolicy, type ExecuteRun } from "../command-executor.js";
-import type { ExecutionTracker } from "../execution-state.js";
-import type { ApprovalPrompt } from "../approval.js";
-import { classifyCommandExecutionError } from "../errors.js";
-import { createRuntimeCommandPolicy } from "../policy.js";
+} from "../agent-tool-result.ts";
+import { executeCommandWithPolicy, type ExecuteRun } from "../command-executor.ts";
+import type { ExecutionTracker } from "../execution-state.ts";
+import type { ApprovalPrompt } from "../approval.ts";
+import { classifyCommandExecutionError } from "../errors.ts";
+import { createRuntimeCommandPolicy } from "../policy.ts";
 
 type RunCommandToolData =
   | {

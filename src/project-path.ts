@@ -1,5 +1,4 @@
-import { realpath } from "node:fs/promises";
-import path from "node:path";
+import { dirname, isAbsolute, relative, resolve, SEPARATOR } from "@std/path";
 
 const blockedWriteFiles = new Set([".env", "pnpm-lock.yaml"]);
 const blockedWriteDirectories = new Set([
@@ -11,17 +10,17 @@ const blockedWriteDirectories = new Set([
 ]);
 
 function assertInsideProject(root: string, absolutePath: string) {
-  const relativePath = path.relative(root, absolutePath);
+  const rel = relative(root, absolutePath);
 
-  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+  if (rel.startsWith("..") || isAbsolute(rel)) {
     throw new Error("Path must stay inside the current project.");
   }
 
-  return relativePath;
+  return rel;
 }
 
 function assertWritableRelativePath(relativePath: string) {
-  const pathParts = relativePath.split(path.sep);
+  const pathParts = relativePath.split(SEPARATOR);
 
   if (blockedWriteFiles.has(relativePath)) {
     throw new Error(`File is not writable by the agent: ${relativePath}`);
@@ -35,14 +34,14 @@ function assertWritableRelativePath(relativePath: string) {
 }
 
 export async function resolveExistingProjectPath(inputPath: string) {
-  const root = await realpath(process.cwd());
-  const absolutePath = await realpath(path.resolve(root, inputPath));
-  const relativePath = assertInsideProject(root, absolutePath);
+  const root = await Deno.realPath(Deno.cwd());
+  const absolutePath = await Deno.realPath(resolve(root, inputPath));
+  const rel = assertInsideProject(root, absolutePath);
 
   return {
     root,
     absolutePath,
-    relativePath,
+    relativePath: rel,
   };
 }
 
@@ -55,17 +54,17 @@ export async function resolveWritableProjectPath(inputPath: string) {
 }
 
 export async function resolveNewWritableProjectPath(inputPath: string) {
-  const root = await realpath(process.cwd());
-  const absolutePath = path.resolve(root, inputPath);
-  const relativePath = assertInsideProject(root, absolutePath);
-  const parentDirectory = await realpath(path.dirname(absolutePath));
+  const root = await Deno.realPath(Deno.cwd());
+  const absolutePath = resolve(root, inputPath);
+  const rel = assertInsideProject(root, absolutePath);
+  const parentDirectory = await Deno.realPath(dirname(absolutePath));
 
   assertInsideProject(root, parentDirectory);
-  assertWritableRelativePath(relativePath);
+  assertWritableRelativePath(rel);
 
   return {
     root,
     absolutePath,
-    relativePath,
+    relativePath: rel,
   };
 }

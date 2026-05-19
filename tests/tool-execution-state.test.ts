@@ -1,13 +1,13 @@
-import { writeFile } from "node:fs/promises";
-import { describe, expect, it } from "vitest";
-import { createExecutionTracker, type ExecutionEvent } from "../src/execution-state.js";
-import { createApplyPatchTool } from "../src/tools/apply-patch.js";
-import { createEditFileTool } from "../src/tools/edit-file.js";
-import { createGetDiffTool } from "../src/tools/get-diff.js";
-import { createListFilesTool } from "../src/tools/list-files.js";
-import { createReadFileTool } from "../src/tools/read-file.js";
-import { createSearchFilesTool } from "../src/tools/search-files.js";
-import { withTempProject } from "./helpers/temp-project.js";
+import { describe, it } from "@std/testing/bdd";
+import { expect } from "@std/expect";
+import { createExecutionTracker, type ExecutionEvent } from "../src/execution-state.ts";
+import { createApplyPatchTool } from "../src/tools/apply-patch.ts";
+import { createEditFileTool } from "../src/tools/edit-file.ts";
+import { createGetDiffTool } from "../src/tools/get-diff.ts";
+import { createListFilesTool } from "../src/tools/list-files.ts";
+import { createReadFileTool } from "../src/tools/read-file.ts";
+import { createSearchFilesTool } from "../src/tools/search-files.ts";
+import { withTempProject } from "./helpers/temp-project.ts";
 
 const toolExecutionOptions = {
   toolCallId: "call_1",
@@ -32,7 +32,7 @@ describe("tool execution state tracking", () => {
       const tracker = createTracker(events);
       const listFilesTool = createListFilesTool({ executionTracker: tracker });
 
-      await writeFile("index.ts", "export const value = 1;\n", "utf8");
+      await Deno.writeTextFile("index.ts", "export const value = 1;\n");
 
       const result = await listFilesTool.execute?.(
         { path: ".", maxDepth: 1 },
@@ -85,7 +85,7 @@ describe("tool execution state tracking", () => {
       const tracker = createTracker(events);
       const searchFilesTool = createSearchFilesTool({ executionTracker: tracker });
 
-      await writeFile("index.ts", "const agent = true;\n", "utf8");
+      await Deno.writeTextFile("index.ts", "const agent = true;\n");
 
       const result = await searchFilesTool.execute?.(
         {
@@ -135,7 +135,7 @@ describe("tool execution state tracking", () => {
       const tracker = createTracker(events);
       const editFileTool = createEditFileTool({ executionTracker: tracker });
 
-      await writeFile("index.ts", "const name = 'agent';\n", "utf8");
+      await Deno.writeTextFile("index.ts", "const name = 'agent';\n");
 
       const result = await editFileTool.execute?.(
         {

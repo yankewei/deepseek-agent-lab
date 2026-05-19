@@ -1,13 +1,13 @@
-import { inspect } from "node:util";
-import type { ExecutionEvent } from "./execution-state.js";
+
+import type { ExecutionEvent } from "./execution-state.ts";
 
 const divider = "─".repeat(72);
 
 export function formatValue(value: unknown) {
-  return inspect(value, {
+  return Deno.inspect(value, {
     colors: false,
     compact: false,
-    depth: null,
+    depth: undefined,
     sorted: false,
   });
 }

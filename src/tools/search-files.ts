@@ -1,10 +1,10 @@
 import { tool } from "ai";
 import { execa } from "execa";
-import path from "node:path";
+import { relative } from "@std/path";
 import { z } from "zod";
-import { toAgentToolResult } from "../agent-tool-result.js";
-import { executeToolWithState, type ExecutionTracker } from "../execution-state.js";
-import { resolveExistingProjectPath } from "../project-path.js";
+import { toAgentToolResult } from "../agent-tool-result.ts";
+import { executeToolWithState, type ExecutionTracker } from "../execution-state.ts";
+import { resolveExistingProjectPath } from "../project-path.ts";
 
 const ignoredGlobs = ["!.git/**", "!node_modules/**", "!dist/**", "!build/**", "!.next/**"];
 
@@ -31,7 +31,7 @@ function parseRipgrepLine(line: string, root: string): SearchMatch | null {
   }
 
   return {
-    file: path.relative(root, filePath),
+    file: relative(root, filePath),
     line: lineNumber,
     text,
   };

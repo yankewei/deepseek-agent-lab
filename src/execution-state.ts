@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import type { CommandPolicyCode } from "./policy.js";
+// randomUUID is a standard Web API available in Deno
+import type { CommandPolicyCode } from "./policy.ts";
 
 export type ExecutionStatus =
   | "created"
@@ -94,7 +94,7 @@ export function createExecutionTracker(options?: {
   now?: () => Date;
   onEvent?: (event: ExecutionEvent) => void;
 }): ExecutionTracker {
-  const createId = options?.createId ?? randomUUID;
+  const createId = options?.createId ?? (() => crypto.randomUUID());
   const now = options?.now ?? (() => new Date());
   const onEvent = options?.onEvent;
   const records = new Map<string, ExecutionRecord>();

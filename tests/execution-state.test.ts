@@ -1,11 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { executeCommandWithPolicy } from "../src/command-executor.js";
+import { describe, it } from "@std/testing/bdd";
+import { expect } from "@std/expect";
+import { executeCommandWithPolicy } from "../src/command-executor.ts";
 import {
   createExecutionTracker,
   executeToolWithState,
   type ExecutionEvent,
   type ExecutionTracker,
-} from "../src/execution-state.js";
+} from "../src/execution-state.ts";
 
 function createTestTracker() {
   let id = 0;
@@ -40,7 +41,7 @@ describe("execution state tracking", () => {
     const tracker = createTestTracker();
 
     const result = await executeCommandWithPolicy(
-      { command: " pnpm   typecheck " },
+      { command: " deno   task   test " },
       async () => {
         throw new Error("approval should not be requested");
       },
@@ -56,12 +57,12 @@ describe("execution state tracking", () => {
     expect(result.executionId).toBe("exec_1");
     expect(record).toMatchObject({
       id: "exec_1",
-      command: " pnpm   typecheck ",
+      command: " deno   task   test ",
       status: "completed",
       durationMs: 3000,
       policyDecision: "allow",
       policyCode: "LOW_RISK_COMMAND_ALLOWED",
-      normalizedCommand: "pnpm typecheck",
+      normalizedCommand: "deno task test",
       exitCode: 0,
     });
     expect(recordStatuses(tracker)).toEqual(["created", "policy_evaluated", "running", "completed"]);
@@ -71,7 +72,7 @@ describe("execution state tracking", () => {
     const tracker = createTestTracker();
 
     await executeCommandWithPolicy(
-      { command: "pnpm add -D vitest", reason: "install test framework" },
+      { command: "deno add npm:vitest", reason: "install test framework" },
       async () => ({ decision: "approve_once" }),
       async () => ({
         stdout: "",
@@ -103,7 +104,7 @@ describe("execution state tracking", () => {
     const tracker = createTestTracker();
 
     const result = await executeCommandWithPolicy(
-      { command: "pnpm install", reason: "sync dependencies" },
+      { command: "deno install", reason: "sync dependencies" },
       async () => ({ decision: "deny" }),
       async () => {
         throw new Error("command should not execute");
@@ -158,7 +159,7 @@ describe("execution state tracking", () => {
 
     await expect(
       executeCommandWithPolicy(
-        { command: "pnpm test" },
+        { command: "deno task test" },
         async () => ({ decision: "approve_once" }),
         async () => {
           throw new Error("test runner crashed");
@@ -183,7 +184,7 @@ describe("execution state tracking", () => {
     const tracker = createTestTrackerWithEvents(events);
 
     await executeCommandWithPolicy(
-      { command: "pnpm test" },
+      { command: "deno task test" },
       async () => {
         throw new Error("approval should not be requested");
       },
@@ -214,7 +215,7 @@ describe("execution state tracking", () => {
     const events: ExecutionEvent[] = [];
     const tracker = createTestTrackerWithEvents(events);
 
-    const commandRecord = tracker.createRecord({ command: "pnpm test" });
+    const commandRecord = tracker.createRecord({ command: "deno task test" });
     const toolRecord = tracker.createRecord({ kind: "tool", toolName: "listFiles" });
 
     tracker.updateRecord(commandRecord.id, { status: "running" });
@@ -233,7 +234,7 @@ describe("execution state tracking", () => {
     const events: ExecutionEvent[] = [];
     const tracker = createTestTrackerWithEvents(events);
 
-    const record = tracker.createRecord({ command: "pnpm test" });
+    const record = tracker.createRecord({ command: "deno task test" });
     events[0].record.status = "failed";
     events[0].record.history.push({
       status: "failed",

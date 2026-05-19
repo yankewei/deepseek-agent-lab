@@ -32,46 +32,44 @@ DEEPSEEK_API_KEY=your_key_here
 Install dependencies:
 
 ```bash
-pnpm install
+deno install
 ```
 
 Run the agent:
 
 ```bash
-pnpm start "请分析这个项目"
+deno task start "请分析这个项目"
 ```
 
 Build a standalone binary for the current platform:
 
 ```bash
-pnpm build:bin
+deno task build:bin
 ./dist/deepseek-agent-lab "请分析这个项目"
 ```
 
 Run checks:
 
 ```bash
-pnpm check
+deno task test
 ```
 
 ## Scripts
 
 ```bash
-pnpm start "task"        # Run the coding agent
-pnpm build:bin           # Build a standalone binary in dist/
-pnpm typecheck           # Type-check the project
-pnpm test                # Run Vitest tests
-pnpm check               # Type-check and test
+deno task start "task"   # Run the coding agent
+deno task build:bin      # Build a standalone binary in dist/
+deno task test           # Run tests
 ```
 
 ## Binary Build
 
-The binary build uses Bun's standalone executable compiler. It bundles the
-TypeScript entrypoint and runtime dependencies into one executable for the
-current operating system and CPU architecture.
+The binary build uses Deno's `compile` command. It bundles the TypeScript
+entrypoint and runtime dependencies into one executable for the current
+operating system and CPU architecture.
 
 ```bash
-pnpm build:bin
+deno task build:bin
 ```
 
 The default output path is:
@@ -89,7 +87,7 @@ dist/deepseek-agent-lab.exe
 To customize the output path:
 
 ```bash
-OUTFILE=dist/agent pnpm build:bin
+deno compile --allow-all --output dist/agent ./index.ts
 ```
 
 The executable still reads configuration from the environment, so keep using
@@ -130,13 +128,11 @@ Current command policy:
 
 ```text
 pwd                  -> allow
-pnpm test            -> allow
-pnpm typecheck       -> allow
-pnpm build:bin       -> allow
-pnpm --version       -> allow
-pnpm install         -> prompt
-pnpm add ...         -> prompt
-pnpm remove ...      -> prompt
+deno task test       -> allow
+deno task build:bin  -> allow
+deno --version       -> allow
+deno install         -> prompt
+deno add ...         -> prompt
 everything else      -> forbidden
 ```
 
@@ -154,24 +150,22 @@ Write tools additionally block sensitive or generated paths:
 - `dist/`
 - `build/`
 - `.next/`
-- `pnpm-lock.yaml`
+- `deno.lock`
 
 `runCommand` runs these commands without approval:
 
 ```text
 pwd
-pnpm test
-pnpm typecheck
-pnpm build:bin
-pnpm --version
+deno task test
+deno task build:bin
+deno --version
 ```
 
 Dependency changes use `runCommand` too, but require approval before running:
 
 ```text
-pnpm install
-pnpm add ...
-pnpm remove ...
+deno install
+deno add ...
 ```
 
 ## Why Not Allow `cat`, `ls`, or `rg` Through `runCommand`?
@@ -272,7 +266,7 @@ visually separate. Debug mode shows every runtime event, including execution
 events, tool results, step boundaries, and token usage:
 
 ```bash
-DEBUG=1 pnpm start "列出当前项目文件"
+DEBUG=1 deno task start "列出当前项目文件"
 ```
 
 ## Human-in-the-loop Approval
@@ -284,15 +278,15 @@ The approval request is structured so the UI can show the important context:
 {
   action: "run-command",
   title: "Run command requiring approval",
-  subject: "pnpm add -D vitest",
+  subject: "deno add npm:vitest",
   riskLevel: "medium",
   policyReason: "Dependency command requires user approval.",
   suggestedPolicyAmendment: {
     type: "allow-command-prefix",
-    prefix: "pnpm add"
+    prefix: "deno add"
   },
   details: {
-    Command: "pnpm add -D vitest",
+    Command: "deno add npm:vitest",
     Reason: "install test framework"
   }
 }
@@ -304,17 +298,17 @@ The CLI renders this as an explicit approve-once prompt:
 Approval required
 Run command requiring approval
 Action: run-command
-Subject: pnpm add -D vitest
+Subject: deno add npm:vitest
 Risk: medium
 Policy: Dependency command requires user approval.
 
 Details:
-  Command: pnpm add -D vitest
+  Command: deno add npm:vitest
   Reason: install test framework
 
 Options:
   y - approve once
-  a - always allow prefix: pnpm add
+  a - always allow prefix: deno add
   n - deny
 ```
 
@@ -439,7 +433,7 @@ The test suite covers the important safety behavior:
 Run:
 
 ```bash
-pnpm test
+deno task test
 ```
 
 ## Learning Path

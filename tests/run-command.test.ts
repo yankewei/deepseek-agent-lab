@@ -1,11 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { executeCommandWithPolicy } from "../src/command-executor.js";
-import { createRuntimeCommandPolicy } from "../src/policy.js";
+import { describe, it } from "@std/testing/bdd";
+import { expect } from "@std/expect";
+import { executeCommandWithPolicy } from "../src/command-executor.ts";
+import { createRuntimeCommandPolicy } from "../src/policy.ts";
 
 describe("executeCommandWithPolicy", () => {
   it("runs allowed commands without approval", async () => {
     const result = await executeCommandWithPolicy(
-      { command: " pnpm   typecheck " },
+      { command: " deno   task   test " },
       async () => {
         throw new Error("approval should not be requested");
       },
@@ -19,34 +20,34 @@ describe("executeCommandWithPolicy", () => {
     expect(result).toEqual({
       approved: false,
       approvalRequired: false,
-      stdout: "pnpm typecheck",
+      stdout: "deno task test",
       stderr: "",
       exitCode: 0,
     });
   });
 
   it("requires a reason for commands that need approval", async () => {
-    await expect(executeCommandWithPolicy({ command: "pnpm add -D vitest" })).rejects.toThrow(
+    await expect(executeCommandWithPolicy({ command: "deno add npm:vitest" })).rejects.toThrow(
       /Approval reason is required/,
     );
   });
 
   it("skips execution when approval is denied", async () => {
     const result = await executeCommandWithPolicy(
-      { command: "pnpm install", reason: "sync dependencies" },
+      { command: "deno install", reason: "sync dependencies" },
       async (request) => {
         expect(request).toEqual({
           action: "run-command",
           title: "Run command requiring approval",
-          subject: "pnpm install",
+          subject: "deno install",
           riskLevel: "medium",
           policyReason: "Dependency command requires user approval.",
           suggestedPolicyAmendment: {
             type: "allow-command-prefix",
-            prefix: "pnpm install",
+            prefix: "deno install",
           },
           details: {
-            Command: "pnpm install",
+            Command: "deno install",
             Reason: "sync dependencies",
           },
         });
@@ -67,9 +68,9 @@ describe("executeCommandWithPolicy", () => {
 
   it("runs dependency commands after approval", async () => {
     const result = await executeCommandWithPolicy(
-      { command: "pnpm add -D vitest", reason: "install test framework" },
+      { command: "deno add npm:vitest", reason: "install test framework" },
       async (request) => {
-        expect(request.details.Command).toBe("pnpm add -D vitest");
+        expect(request.details.Command).toBe("deno add npm:vitest");
         return { decision: "approve_once" };
       },
       async (command, args) => ({
@@ -82,7 +83,7 @@ describe("executeCommandWithPolicy", () => {
     expect(result).toEqual({
       approved: true,
       approvalRequired: true,
-      stdout: "pnpm add -D vitest",
+      stdout: "deno add npm:vitest",
       stderr: "",
       exitCode: 0,
     });
@@ -93,12 +94,12 @@ describe("executeCommandWithPolicy", () => {
     let approvalRequests = 0;
 
     const firstResult = await executeCommandWithPolicy(
-      { command: "pnpm add -D vitest", reason: "install test framework" },
+      { command: "deno add npm:vitest", reason: "install test framework" },
       async (request) => {
         approvalRequests += 1;
         expect(request.suggestedPolicyAmendment).toEqual({
           type: "allow-command-prefix",
-          prefix: "pnpm add",
+          prefix: "deno add",
         });
 
         return {
@@ -116,7 +117,7 @@ describe("executeCommandWithPolicy", () => {
     );
 
     const secondResult = await executeCommandWithPolicy(
-      { command: "pnpm add zod" },
+      { command: "deno add npm:zod" },
       async () => {
         throw new Error("approval should not be requested");
       },
@@ -133,12 +134,12 @@ describe("executeCommandWithPolicy", () => {
     expect(firstResult).toMatchObject({
       approved: true,
       approvalRequired: true,
-      stdout: "pnpm add -D vitest",
+      stdout: "deno add npm:vitest",
     });
     expect(secondResult).toMatchObject({
       approved: false,
       approvalRequired: false,
-      stdout: "pnpm add zod",
+      stdout: "deno add npm:zod",
     });
   });
 

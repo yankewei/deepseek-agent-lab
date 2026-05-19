@@ -1,13 +1,13 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { describe, expect, it } from "vitest";
-import { applyPatchTool } from "../src/tools/apply-patch.js";
-import { editFileTool } from "../src/tools/edit-file.js";
-import { getDiffTool } from "../src/tools/get-diff.js";
-import { listFilesTool } from "../src/tools/list-files.js";
-import { readFileTool } from "../src/tools/read-file.js";
-import { searchFilesTool } from "../src/tools/search-files.js";
-import { withTempProject } from "./helpers/temp-project.js";
+import { join } from "@std/path";
+import { describe, it } from "@std/testing/bdd";
+import { expect } from "@std/expect";
+import { applyPatchTool } from "../src/tools/apply-patch.ts";
+import { editFileTool } from "../src/tools/edit-file.ts";
+import { getDiffTool } from "../src/tools/get-diff.ts";
+import { listFilesTool } from "../src/tools/list-files.ts";
+import { readFileTool } from "../src/tools/read-file.ts";
+import { searchFilesTool } from "../src/tools/search-files.ts";
+import { withTempProject } from "./helpers/temp-project.ts";
 
 const toolExecutionOptions = {
   toolCallId: "call_1",
@@ -17,8 +17,8 @@ const toolExecutionOptions = {
 describe("tool AgentToolResult wrappers", () => {
   it("wraps listFiles results", async () => {
     await withTempProject(async () => {
-      await mkdir("src");
-      await writeFile("src/index.ts", "export const value = 1;\n", "utf8");
+      await Deno.mkdir("src");
+      await Deno.writeTextFile("src/index.ts", "export const value = 1;\n");
 
       const result = await listFilesTool.execute?.(
         { path: ".", maxDepth: 2 },
@@ -36,7 +36,7 @@ describe("tool AgentToolResult wrappers", () => {
 
   it("wraps readFile results", async () => {
     await withTempProject(async () => {
-      await writeFile("README.md", "hello\n", "utf8");
+      await Deno.writeTextFile("README.md", "hello\n");
 
       const result = await readFileTool.execute?.(
         { path: "README.md" },
@@ -54,7 +54,7 @@ describe("tool AgentToolResult wrappers", () => {
 
   it("wraps searchFiles results", async () => {
     await withTempProject(async () => {
-      await writeFile("index.ts", "const agent = true;\n", "utf8");
+      await Deno.writeTextFile("index.ts", "const agent = true;\n");
 
       const result = await searchFilesTool.execute?.(
         {
@@ -98,7 +98,7 @@ describe("tool AgentToolResult wrappers", () => {
 
   it("wraps editFile results", async () => {
     await withTempProject(async () => {
-      await writeFile("index.ts", "const name = 'agent';\n", "utf8");
+      await Deno.writeTextFile("index.ts", "const name = 'agent';\n");
 
       const result = await editFileTool.execute?.(
         {
@@ -142,8 +142,8 @@ describe("tool AgentToolResult wrappers", () => {
 
   it("wraps tool failures", async () => {
     await withTempProject(async (projectRoot) => {
-      const outsideFile = path.join(projectRoot, "..", "outside.txt");
-      await writeFile(outsideFile, "outside\n", "utf8");
+      const outsideFile = join(projectRoot, "..", "outside.txt");
+      await Deno.writeTextFile(outsideFile, "outside\n");
 
       try {
         const result = await readFileTool.execute?.(
@@ -159,7 +159,7 @@ describe("tool AgentToolResult wrappers", () => {
           },
         });
       } finally {
-        await rm(outsideFile, { force: true });
+        await Deno.remove(outsideFile);
       }
     });
   });

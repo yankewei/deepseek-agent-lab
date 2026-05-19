@@ -1,8 +1,8 @@
 import { tool } from "ai";
 import { execa } from "execa";
 import { z } from "zod";
-import { toAgentToolResult } from "../agent-tool-result.js";
-import { executeToolWithState, type ExecutionTracker } from "../execution-state.js";
+import { toAgentToolResult } from "../agent-tool-result.ts";
+import { executeToolWithState, type ExecutionTracker } from "../execution-state.ts";
 
 type DiffMode = "stat" | "name-only" | "full";
 

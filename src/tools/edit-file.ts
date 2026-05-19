@@ -1,9 +1,8 @@
 import { tool } from "ai";
-import { readFile, writeFile } from "node:fs/promises";
 import { z } from "zod";
-import { toAgentToolResult } from "../agent-tool-result.js";
-import { executeToolWithState, type ExecutionTracker } from "../execution-state.js";
-import { resolveWritableProjectPath } from "../project-path.js";
+import { toAgentToolResult } from "../agent-tool-result.ts";
+import { executeToolWithState, type ExecutionTracker } from "../execution-state.ts";
+import { resolveWritableProjectPath } from "../project-path.ts";
 
 function countOccurrences(text: string, search: string) {
   let count = 0;
@@ -23,7 +22,7 @@ function countOccurrences(text: string, search: string) {
 
 export async function editFile(input: { path: string; oldText: string; newText: string }) {
   const projectPath = await resolveWritableProjectPath(input.path);
-  const currentText = await readFile(projectPath.absolutePath, "utf8");
+  const currentText = await Deno.readTextFile(projectPath.absolutePath);
   const occurrences = countOccurrences(currentText, input.oldText);
 
   if (occurrences === 0) {
@@ -38,7 +37,7 @@ export async function editFile(input: { path: string; oldText: string; newText: 
 
   const updatedText = currentText.replace(input.oldText, input.newText);
 
-  await writeFile(projectPath.absolutePath, updatedText, "utf8");
+  await Deno.writeTextFile(projectPath.absolutePath, updatedText);
 
   return {
     path: projectPath.relativePath,

@@ -1,9 +1,9 @@
 import { tool } from "ai";
-import { readFile, unlink, writeFile } from "node:fs/promises";
+
 import { z } from "zod";
-import { toAgentToolResult } from "../agent-tool-result.js";
-import { executeToolWithState, type ExecutionTracker } from "../execution-state.js";
-import { resolveNewWritableProjectPath, resolveWritableProjectPath } from "../project-path.js";
+import { toAgentToolResult } from "../agent-tool-result.ts";
+import { executeToolWithState, type ExecutionTracker } from "../execution-state.ts";
+import { resolveNewWritableProjectPath, resolveWritableProjectPath } from "../project-path.ts";
 
 type AddOperation = {
   type: "add";
@@ -211,19 +211,21 @@ export async function applyPatch(input: { patch: string }) {
 
   for (const operation of validatedOperations) {
     if (operation.type === "add") {
-      await writeFile(operation.projectPath.absolutePath, operation.content, {
-        encoding: "utf8",
-        flag: "wx",
+      const file = await Deno.open(operation.projectPath.absolutePath, {
+        write: true,
+        createNew: true,
       });
+      await file.write(new TextEncoder().encode(operation.content));
+      file.close();
       continue;
     }
 
     if (operation.type === "delete") {
-      await unlink(operation.projectPath.absolutePath);
+      await Deno.remove(operation.projectPath.absolutePath);
       continue;
     }
 
-    let currentText = await readFile(operation.projectPath.absolutePath, "utf8");
+    let currentText = await Deno.readTextFile(operation.projectPath.absolutePath);
 
     for (const hunk of operation.hunks) {
       const occurrences = countOccurrences(currentText, hunk.oldText);
@@ -241,7 +243,7 @@ export async function applyPatch(input: { patch: string }) {
       currentText = currentText.replace(hunk.oldText, hunk.newText);
     }
 
-    await writeFile(operation.projectPath.absolutePath, currentText, "utf8");
+    await Deno.writeTextFile(operation.projectPath.absolutePath, currentText);
   }
 
   return {

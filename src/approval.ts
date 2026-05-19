@@ -1,6 +1,5 @@
-import { stdin as input, stdout as output } from "node:process";
-import { createInterface } from "node:readline/promises";
-import type { RiskLevel } from "./policy.js";
+import { prompt } from "@deno-cli-tools/prompts";
+import type { RiskLevel } from "./policy.ts";
 
 export type ApprovalRequest = {
   action: string;
@@ -69,34 +68,28 @@ export function formatApprovalRequest(request: ApprovalRequest) {
 }
 
 export async function promptForApproval(request: ApprovalRequest) {
-  if (!input.isTTY) {
+  if (!Deno.stdin.isTerminal()) {
     return {
       decision: "deny" as const,
       reason: "Approval prompt requires an interactive terminal.",
     };
   }
 
-  const readline = createInterface({ input, output });
+  await Deno.stdout.write(new TextEncoder().encode(formatApprovalRequest(request)));
+  const answer = (await prompt("Approve? [y/a/N] ")) ?? "";
 
-  try {
-    output.write(formatApprovalRequest(request));
-    const answer = await readline.question("Approve? [y/a/N] ");
-
-    if (answer.trim().toLowerCase() === "y") {
-      return { decision: "approve_once" as const };
-    }
-
-    if (answer.trim().toLowerCase() === "a" && request.suggestedPolicyAmendment) {
-      return {
-        decision: "always_allow_command_prefix" as const,
-        policyAmendment: request.suggestedPolicyAmendment,
-      };
-    }
-
-    return { decision: "deny" as const };
-  } finally {
-    readline.close();
+  if (answer.toLowerCase() === "y") {
+    return { decision: "approve_once" as const };
   }
+
+  if (answer.toLowerCase() === "a" && request.suggestedPolicyAmendment) {
+    return {
+      decision: "always_allow_command_prefix" as const,
+      policyAmendment: request.suggestedPolicyAmendment,
+    };
+  }
+
+  return { decision: "deny" as const };
 }
 
 export async function requestApproval(request: ApprovalRequest, prompt: ApprovalPrompt = promptForApproval) {

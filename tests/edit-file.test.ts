@@ -1,12 +1,12 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { describe, expect, it } from "vitest";
-import { editFile } from "../src/tools/edit-file.js";
-import { withTempProject } from "./helpers/temp-project.js";
+import { describe, it } from "@std/testing/bdd";
+import { expect } from "@std/expect";
+import { editFile } from "../src/tools/edit-file.ts";
+import { withTempProject } from "./helpers/temp-project.ts";
 
 describe("editFile", () => {
   it("replaces one exact text block", async () => {
     await withTempProject(async () => {
-      await writeFile("index.ts", "const name = 'agent';\nconsole.log(name);\n", "utf8");
+      await Deno.writeTextFile("index.ts", "const name = 'agent';\nconsole.log(name);\n");
 
       const result = await editFile({
         path: "index.ts",
@@ -15,13 +15,13 @@ describe("editFile", () => {
       });
 
       expect(result).toEqual({ path: "index.ts", changed: true });
-      expect(await readFile("index.ts", "utf8")).toBe("const name = 'coding-agent';\nconsole.log(name);\n");
+      expect(await Deno.readTextFile("index.ts")).toBe("const name = 'coding-agent';\nconsole.log(name);\n");
     });
   });
 
   it("rejects missing or ambiguous oldText", async () => {
     await withTempProject(async () => {
-      await writeFile("index.ts", "const value = 1;\nconst value = 1;\n", "utf8");
+      await Deno.writeTextFile("index.ts", "const value = 1;\nconst value = 1;\n");
 
       await expect(
         editFile({
@@ -43,7 +43,7 @@ describe("editFile", () => {
 
   it("cannot write blocked files", async () => {
     await withTempProject(async () => {
-      await writeFile(".env", "TOKEN=secret\n", "utf8");
+      await Deno.writeTextFile(".env", "TOKEN=secret\n");
 
       await expect(
         editFile({

@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { formatApprovalRequest, requestApproval, type ApprovalRequest } from "../src/approval.js";
+import { describe, it } from "@std/testing/bdd";
+import { expect } from "@std/expect";
+import { formatApprovalRequest, requestApproval, type ApprovalRequest } from "../src/approval.ts";
 
 describe("requestApproval", () => {
   it("delegates approval decisions to the configured prompt", async () => {
@@ -7,7 +8,7 @@ describe("requestApproval", () => {
       action: "run-command",
       title: "Run command",
       details: {
-        Command: "pnpm install",
+        Command: "deno install",
       },
     };
 
@@ -24,7 +25,7 @@ describe("requestApproval", () => {
       action: "run-command",
       title: "Run command",
       details: {
-        Command: "pnpm install",
+        Command: "deno install",
       },
     };
 
@@ -46,11 +47,11 @@ describe("formatApprovalRequest", () => {
       formatApprovalRequest({
         action: "run-command",
         title: "Run command requiring approval",
-        subject: "pnpm add -D vitest",
+        subject: "deno add npm:vitest",
         riskLevel: "medium",
         policyReason: "Dependency command requires user approval.",
         details: {
-          Command: "pnpm add -D vitest",
+          Command: "deno add npm:vitest",
           Reason: "install test framework",
         },
       }),
@@ -58,12 +59,12 @@ describe("formatApprovalRequest", () => {
 Approval required
 Run command requiring approval
 Action: run-command
-Subject: pnpm add -D vitest
+Subject: deno add npm:vitest
 Risk: medium
 Policy: Dependency command requires user approval.
 
 Details:
-  Command: pnpm add -D vitest
+  Command: deno add npm:vitest
   Reason: install test framework
 
 Options:
@@ -77,18 +78,18 @@ Options:
       formatApprovalRequest({
         action: "run-command",
         title: "Run command requiring approval",
-        subject: "pnpm add -D vitest",
+        subject: "deno add npm:vitest",
         riskLevel: "medium",
         policyReason: "Dependency command requires user approval.",
         suggestedPolicyAmendment: {
           type: "allow-command-prefix",
-          prefix: "pnpm add",
+          prefix: "deno add",
         },
         details: {
-          Command: "pnpm add -D vitest",
+          Command: "deno add npm:vitest",
           Reason: "install test framework",
         },
       }),
-    ).toContain("a - always allow prefix: pnpm add");
+    ).toContain("a - always allow prefix: deno add");
   });
 });

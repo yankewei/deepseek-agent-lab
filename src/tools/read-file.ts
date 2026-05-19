@@ -1,9 +1,8 @@
 import { tool } from "ai";
-import { readFile } from "node:fs/promises";
 import { z } from "zod";
-import { toAgentToolResult } from "../agent-tool-result.js";
-import { executeToolWithState, type ExecutionTracker } from "../execution-state.js";
-import { resolveExistingProjectPath } from "../project-path.js";
+import { toAgentToolResult } from "../agent-tool-result.ts";
+import { executeToolWithState, type ExecutionTracker } from "../execution-state.ts";
+import { resolveExistingProjectPath } from "../project-path.ts";
 
 export function createReadFileTool(options?: { executionTracker?: ExecutionTracker }) {
   return tool({
@@ -22,7 +21,7 @@ export function createReadFileTool(options?: { executionTracker?: ExecutionTrack
             const projectPath = await resolveExistingProjectPath(path);
 
             return {
-              content: await readFile(projectPath.absolutePath, "utf8"),
+              content: await Deno.readTextFile(projectPath.absolutePath),
             };
           },
         }),

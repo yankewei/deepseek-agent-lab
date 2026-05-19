@@ -6,16 +6,16 @@ import {
   formatSection,
   formatValue,
   getStreamText,
-} from "./src/cli-output.js";
-import { createExecutionTracker } from "./src/execution-state.js";
-import { createTools } from "./src/tools/index.js";
+} from "./src/cli-output.ts";
+import { createExecutionTracker } from "./src/execution-state.ts";
+import { createTools } from "./src/tools/index.ts";
 
-const userPrompt = process.argv.slice(2).join(" ").trim();
-const debug = process.env.DEBUG === "1";
+const userPrompt = Deno.args.join(" ").trim();
+const debug = Deno.env.get("DEBUG") === "1";
 
 if (!userPrompt) {
-  console.error('Usage: pnpm start "请分析当前项目"');
-  process.exit(1);
+  console.error('Usage: deno task start "请分析当前项目"');
+  Deno.exit(1);
 }
 
 const executionTracker = createExecutionTracker({
@@ -73,9 +73,9 @@ If a command is blocked, explain what you were trying to learn and choose a safe
 let textSectionOpen = false;
 let reasoningSectionOpen = false;
 
-function closeOpenStreamSection() {
+async function closeOpenStreamSection() {
   if (textSectionOpen || reasoningSectionOpen) {
-    process.stdout.write("\n");
+    await Deno.stdout.write(new TextEncoder().encode("\n"));
     textSectionOpen = false;
     reasoningSectionOpen = false;
   }
@@ -92,7 +92,7 @@ for await (const event of result.fullStream) {
     }
 
     case "finish": {
-      closeOpenStreamSection();
+      await closeOpenStreamSection();
 
       if (debug) {
         console.log(
@@ -110,55 +110,55 @@ for await (const event of result.fullStream) {
     }
 
     case "reasoning-start": {
-      closeOpenStreamSection();
+      await closeOpenStreamSection();
 
       break;
     }
 
     case "reasoning-delta": {
       if (!reasoningSectionOpen) {
-        closeOpenStreamSection();
+        await closeOpenStreamSection();
         console.log(formatSection("🧠 AI THINKING"));
         reasoningSectionOpen = true;
       }
 
-      process.stdout.write(getStreamText(event));
+      await Deno.stdout.write(new TextEncoder().encode(getStreamText(event)));
 
       break;
     }
 
     case "reasoning-end": {
-      closeOpenStreamSection();
+      await closeOpenStreamSection();
 
       break;
     }
 
     case "text-start": {
-      closeOpenStreamSection();
+      await closeOpenStreamSection();
 
       break;
     }
 
     case "text-delta": {
       if (!textSectionOpen) {
-        closeOpenStreamSection();
+        await closeOpenStreamSection();
         console.log(formatSection("💬 AI RESPONSE"));
         textSectionOpen = true;
       }
 
-      process.stdout.write(getStreamText(event));
+      await Deno.stdout.write(new TextEncoder().encode(getStreamText(event)));
 
       break;
     }
 
     case "text-end": {
-      closeOpenStreamSection();
+      await closeOpenStreamSection();
 
       break;
     }
 
     case "tool-call": {
-      closeOpenStreamSection();
+      await closeOpenStreamSection();
       console.log(
         formatSection(
           `🔧 TOOL CALL: ${event.toolName}`,
@@ -173,7 +173,7 @@ for await (const event of result.fullStream) {
     }
 
     case "tool-result": {
-      closeOpenStreamSection();
+      await closeOpenStreamSection();
 
       if (debug) {
         console.log(
@@ -191,7 +191,7 @@ for await (const event of result.fullStream) {
     }
 
     case "tool-error": {
-      closeOpenStreamSection();
+      await closeOpenStreamSection();
 
       if (debug) {
         console.log(
@@ -209,7 +209,7 @@ for await (const event of result.fullStream) {
     }
 
     case "start-step": {
-      closeOpenStreamSection();
+      await closeOpenStreamSection();
 
       if (debug) {
         console.log(formatSection("🧭 AI STEP"));
@@ -219,7 +219,7 @@ for await (const event of result.fullStream) {
     }
 
     case "finish-step": {
-      closeOpenStreamSection();
+      await closeOpenStreamSection();
 
       if (debug) {
         console.log(formatSection("✓ STEP FINISHED"));

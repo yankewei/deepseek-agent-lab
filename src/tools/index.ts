@@ -1,11 +1,11 @@
-import { createApplyPatchTool } from "./apply-patch.js";
-import { createEditFileTool } from "./edit-file.js";
-import { createGetDiffTool } from "./get-diff.js";
-import { createListFilesTool } from "./list-files.js";
-import { createReadFileTool } from "./read-file.js";
-import type { ExecutionTracker } from "../execution-state.js";
-import { createRunCommandTool } from "./run-command.js";
-import { createSearchFilesTool } from "./search-files.js";
+import { createApplyPatchTool } from "./apply-patch.ts";
+import { createEditFileTool } from "./edit-file.ts";
+import { createGetDiffTool } from "./get-diff.ts";
+import { createListFilesTool } from "./list-files.ts";
+import { createReadFileTool } from "./read-file.ts";
+import type { ExecutionTracker } from "../execution-state.ts";
+import { createRunCommandTool } from "./run-command.ts";
+import { createSearchFilesTool } from "./search-files.ts";
 
 export function createTools(options?: { executionTracker?: ExecutionTracker }) {
   return {

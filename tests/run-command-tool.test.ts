@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { createRunCommandTool } from "../src/tools/run-command.js";
+import { describe, it } from "@std/testing/bdd";
+import { expect } from "@std/expect";
+import { createRunCommandTool } from "../src/tools/run-command.ts";
 
 const toolExecutionOptions = {
   toolCallId: "call_1",
@@ -17,14 +18,14 @@ describe("runCommandTool", () => {
     });
 
     const result = await runCommandTool.execute?.(
-      { command: "pnpm typecheck" },
+      { command: "deno task test" },
       toolExecutionOptions,
     );
 
     expect(result).toEqual({
       ok: true,
       data: {
-        stdout: "pnpm typecheck",
+        stdout: "deno task test",
         stderr: "",
         exitCode: 0,
       },
@@ -43,7 +44,7 @@ describe("runCommandTool", () => {
     });
 
     const result = await runCommandTool.execute?.(
-      { command: "pnpm install", reason: "sync dependencies" },
+      { command: "deno install", reason: "sync dependencies" },
       toolExecutionOptions,
     );
 
@@ -76,11 +77,11 @@ describe("runCommandTool", () => {
     });
 
     const firstResult = await runCommandTool.execute?.(
-      { command: "pnpm add -D vitest", reason: "install test framework" },
+      { command: "deno add npm:vitest", reason: "install test framework" },
       toolExecutionOptions,
     );
     const secondResult = await runCommandTool.execute?.(
-      { command: "pnpm add zod" },
+      { command: "deno add npm:zod" },
       toolExecutionOptions,
     );
 
@@ -94,7 +95,7 @@ describe("runCommandTool", () => {
     expect(secondResult).toMatchObject({
       ok: true,
       data: {
-        stdout: "pnpm add zod",
+        stdout: "deno add npm:zod",
       },
       meta: {
         approvalRequired: false,
@@ -123,7 +124,7 @@ describe("runCommandTool", () => {
     const runCommandTool = createRunCommandTool();
 
     const result = await runCommandTool.execute?.(
-      { command: "pnpm add -D vitest" },
+      { command: "deno add npm:vitest" },
       toolExecutionOptions,
     );
 
@@ -131,7 +132,7 @@ describe("runCommandTool", () => {
       ok: false,
       error: {
         code: "APPROVAL_REASON_REQUIRED",
-        message: "Approval reason is required for command: pnpm add -D vitest",
+        message: "Approval reason is required for command: deno add npm:vitest",
       },
     });
   });

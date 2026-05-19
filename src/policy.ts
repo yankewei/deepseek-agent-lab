@@ -1,12 +1,11 @@
 const blockedShellTokens = ["&&", "||", ";", "|", ">", "<", "`", "$("];
 const allowedCommands = new Set([
   "pwd",
-  "pnpm test",
-  "pnpm typecheck",
-  "pnpm build:bin",
-  "pnpm --version",
+  "deno task test",
+  "deno task build:bin",
+  "deno --version",
 ]);
-const approvableCommandPrefixes = ["pnpm install", "pnpm add", "pnpm remove"];
+const approvableCommandPrefixes = ["deno install", "deno add", "deno remove"];
 
 export type RiskLevel = "low" | "medium" | "high";
 
