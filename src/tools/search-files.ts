@@ -55,6 +55,16 @@ export function createSearchFilesTool(options?: { executionTracker?: ExecutionTr
           tracker: options?.executionTracker,
           run: async () => {
             const projectPath = await resolveExistingProjectPath(path);
+
+            // Check ripgrep availability
+            const rgVersion = await execa("rg", ["--version"], { reject: false });
+            if (rgVersion.exitCode !== 0) {
+              throw new Error(
+                "ripgrep (rg) is required for file search but not found in PATH.\n" +
+                  "Install it: https://github.com/BurntSushi/ripgrep#installation",
+              );
+            }
+
             const args = [
               "--line-number",
               "--no-heading",
