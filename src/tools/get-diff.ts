@@ -44,7 +44,10 @@ export async function getDiff(
   };
 }
 
-export function createGetDiffTool(options?: { executionTracker?: ExecutionTracker }) {
+export function createGetDiffTool(options?: {
+  executionTracker?: ExecutionTracker;
+  executeGit?: ExecuteGit;
+}) {
   return tool({
     description: "Show the current git diff in a read-only mode",
 
@@ -57,7 +60,7 @@ export function createGetDiffTool(options?: { executionTracker?: ExecutionTracke
         await executeToolWithState({
           toolName: "getDiff",
           tracker: options?.executionTracker,
-          run: async () => await getDiff({ mode }),
+          run: async () => await getDiff({ mode }, options?.executeGit),
         }),
       );
     },

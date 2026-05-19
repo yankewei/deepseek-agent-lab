@@ -111,7 +111,14 @@ describe("tool execution state tracking", () => {
   it("tracks getDiff tool execution", async () => {
     const events: ExecutionEvent[] = [];
     const tracker = createTracker(events);
-    const getDiffTool = createGetDiffTool({ executionTracker: tracker });
+    const getDiffTool = createGetDiffTool({
+      executionTracker: tracker,
+      executeGit: async (args) => ({
+        stdout: args.join(" "),
+        stderr: "",
+        exitCode: 0,
+      }),
+    });
 
     const result = await getDiffTool.execute?.(
       { mode: "stat" },
@@ -122,6 +129,7 @@ describe("tool execution state tracking", () => {
       ok: true,
       data: {
         mode: "stat",
+        stdout: "diff --stat",
         exitCode: 0,
       },
     });
