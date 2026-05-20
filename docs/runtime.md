@@ -289,3 +289,5 @@ This project is intentionally small. Known limits:
 
 These are good future learning tasks because they build on the runtime pieces
 already in place.
+
+For the planned resume work, see [`resume-roadmap.md`](resume-roadmap.md).

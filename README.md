@@ -501,7 +501,8 @@ deno task test
 ## Learning Path
 
 For a map of the runtime modules and flows, read
-[`docs/runtime.md`](docs/runtime.md).
+[`docs/runtime.md`](docs/runtime.md). For the long-term resume plan, read
+[`docs/resume-roadmap.md`](docs/resume-roadmap.md).
 
 This repo has been built step by step:
 
