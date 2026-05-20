@@ -225,6 +225,17 @@ created
 -> completed / failed
 ```
 
+Some tools add approval states when their action is legal but risky. For
+example, `applyPatch` uses this flow for delete patches:
+
+```text
+created
+-> waiting_for_approval
+-> approved / denied
+-> running
+-> completed / failed
+```
+
 Execution records also include `durationMs` after they reach a terminal state
 such as `completed`, `denied`, or `failed`.
 
@@ -457,7 +468,9 @@ tool returns the preview result without creating, deleting, or modifying files.
 
 Delete patches require approval before they are applied. If approval is denied,
 the tool returns a skipped result and does not delete the file. Dry-run previews
-do not require approval because they do not write to disk.
+do not require approval because they do not write to disk. Approval decisions
+are tracked in the execution state so skipped and approved patch attempts can be
+traced by `executionId`.
 
 ## Tests
 

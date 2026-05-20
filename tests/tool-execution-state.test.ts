@@ -255,4 +255,140 @@ describe("tool execution state tracking", () => {
       expect(events.at(-1)?.record.toolName).toBe("applyPatch");
     });
   });
+
+  it("tracks update-only applyPatch execution without approval", async () => {
+    await withTempProject(async () => {
+      const events: ExecutionEvent[] = [];
+      const tracker = createTracker(events);
+      const applyPatchTool = createApplyPatchTool({
+        executionTracker: tracker,
+        prompt: async () => {
+          throw new Error("approval should not be requested");
+        },
+      });
+
+      await Deno.writeTextFile("index.ts", "const value = 1;\n");
+
+      const result = await applyPatchTool.execute?.(
+        {
+          patch: `*** Begin Patch
+*** Update File: index.ts
+@@
+-const value = 1;
++const value = 2;
+*** End Patch`,
+        },
+        toolExecutionOptions,
+      );
+
+      expect(result).toEqual({
+        ok: true,
+        data: {
+          changedFiles: ["index.ts"],
+          dryRun: false,
+        },
+      });
+      expect(events.map((event) => event.record.status)).toEqual([
+        "created",
+        "running",
+        "completed",
+      ]);
+      expect(events.at(-1)?.record.toolName).toBe("applyPatch");
+      expect(await Deno.readTextFile("index.ts")).toBe("const value = 2;\n");
+    });
+  });
+
+  it("tracks denied applyPatch approval without applying the patch", async () => {
+    await withTempProject(async () => {
+      const events: ExecutionEvent[] = [];
+      const tracker = createTracker(events);
+      const applyPatchTool = createApplyPatchTool({
+        executionTracker: tracker,
+        prompt: async () => ({
+          decision: "deny",
+          reason: "Not now.",
+        }),
+      });
+
+      await Deno.writeTextFile("old.txt", "remove me\n");
+
+      const result = await applyPatchTool.execute?.(
+        {
+          patch: `*** Begin Patch
+*** Delete File: old.txt
+*** End Patch`,
+        },
+        toolExecutionOptions,
+      );
+
+      expect(result).toEqual({
+        ok: true,
+        data: null,
+        meta: {
+          executionId: "exec_1",
+          approvalRequired: true,
+          skipped: true,
+        },
+      });
+      expect(events.map((event) => event.record.status)).toEqual([
+        "created",
+        "waiting_for_approval",
+        "denied",
+      ]);
+      expect(events.at(-1)?.record).toMatchObject({
+        kind: "tool",
+        toolName: "applyPatch",
+        error: "Not now.",
+      });
+      expect(await Deno.readTextFile("old.txt")).toBe("remove me\n");
+    });
+  });
+
+  it("tracks approved applyPatch approval before applying the patch", async () => {
+    await withTempProject(async () => {
+      const events: ExecutionEvent[] = [];
+      const tracker = createTracker(events);
+      const applyPatchTool = createApplyPatchTool({
+        executionTracker: tracker,
+        prompt: async () => ({ decision: "approve_once" }),
+      });
+
+      await Deno.writeTextFile("old.txt", "remove me\n");
+
+      const result = await applyPatchTool.execute?.(
+        {
+          patch: `*** Begin Patch
+*** Delete File: old.txt
+*** End Patch`,
+        },
+        toolExecutionOptions,
+      );
+
+      expect(result).toEqual({
+        ok: true,
+        data: {
+          changedFiles: ["old.txt"],
+          dryRun: false,
+        },
+        meta: {
+          executionId: "exec_1",
+          approvalRequired: true,
+        },
+      });
+      expect(events.map((event) => event.record.status)).toEqual([
+        "created",
+        "waiting_for_approval",
+        "approved",
+        "running",
+        "completed",
+      ]);
+      expect(events.at(-1)?.record).toMatchObject({
+        kind: "tool",
+        toolName: "applyPatch",
+      });
+      await expect(Deno.readTextFile("old.txt")).rejects.toThrow(
+        /No such file/,
+      );
+    });
+  });
 });

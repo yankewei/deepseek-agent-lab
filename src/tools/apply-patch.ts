@@ -335,6 +335,20 @@ export function createApplyPatchTool(
       AgentToolResult<Awaited<ReturnType<typeof applyPatch>> | null>
     > => {
       if (!dryRun && patchRequiresApproval({ patch })) {
+        const record = options?.executionTracker?.createRecord({
+          kind: "tool",
+          toolName: "applyPatch",
+        });
+        const updateRecord = (
+          update: Parameters<ExecutionTracker["updateRecord"]>[1],
+        ) => {
+          if (record) {
+            options?.executionTracker?.updateRecord(record.id, update);
+          }
+        };
+
+        updateRecord({ status: "waiting_for_approval" });
+
         const approval = await requestApproval(
           {
             action: "apply-patch",
@@ -350,10 +364,34 @@ export function createApplyPatchTool(
         );
 
         if (approval.decision === "deny") {
+          updateRecord({
+            status: "denied",
+            error: approval.reason,
+          });
+
           return okAgentToolResult(null, {
+            ...(record ? { executionId: record.id } : {}),
             approvalRequired: true,
             skipped: true,
           });
+        }
+
+        updateRecord({ status: "approved" });
+
+        try {
+          updateRecord({ status: "running" });
+          const result = await applyPatch({ patch, dryRun });
+          updateRecord({ status: "completed" });
+          return okAgentToolResult(result, {
+            ...(record ? { executionId: record.id } : {}),
+            approvalRequired: true,
+          });
+        } catch (error) {
+          updateRecord({
+            status: "failed",
+            error: error instanceof Error ? error.message : String(error),
+          });
+          throw error;
         }
       }
 

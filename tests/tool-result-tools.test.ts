@@ -260,6 +260,9 @@ describe("tool AgentToolResult wrappers", () => {
           changedFiles: ["old.txt"],
           dryRun: false,
         },
+        meta: {
+          approvalRequired: true,
+        },
       });
       await expect(Deno.readTextFile("old.txt")).rejects.toThrow(
         /No such file/,

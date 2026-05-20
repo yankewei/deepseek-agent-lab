@@ -104,7 +104,8 @@ coding agent 时的下一步清单。
       后面可以继续补更详细的预览信息，比如行号、操作类型、是否需要审批。
 
 - [x] 为删除 patch 接入审批。 现在 `applyPatch` tool 会在真正执行 delete patch
-      前请求 approval。用户拒绝时返回 skipped，不删除文件。 后面可以继续让大范围
+      前请求 approval，并把 waiting_for_approval、approved / denied 写入
+      execution state。用户拒绝时返回 skipped，不删除文件。 后面可以继续让大范围
       patch、修改关键配置进入审批流。
 
 - [ ] 增加更细的写入策略。 现在按路径阻止 `.env`、`.git`、`node_modules`

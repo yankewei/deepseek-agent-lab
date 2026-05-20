@@ -206,6 +206,8 @@ Completed practice task:
 - Dry-run mode does not create, delete, or modify files.
 - Delete patches request approval before writing.
 - Denied delete patches return a skipped result without deleting files.
+- Delete patch approval is tracked in execution state as `waiting_for_approval`,
+  then `approved` or `denied`.
 
 Next practice task:
 
