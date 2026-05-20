@@ -238,7 +238,9 @@ Use this order for future sessions:
 3. Add richer approval decisions.
 4. Add `applyPatch` dry-run mode. Done.
 5. Add `gitStatus`. Done.
-6. Write a short architecture document for runtime flow.
+6. Add an agent runtime workflow test. Done.
+7. Add file write approval.
+8. Write a short architecture document for runtime flow.
 
 Each step is small, testable, and directly connected to a real coding-agent
 runtime concern.

@@ -139,8 +139,9 @@ coding agent 时的下一步清单。
 
 ## 测试和质量
 
-- [ ] 增加 end-to-end 测试。 目前多数是单元测试。后面可以跑一次完整 agent
-      loop，验证 tool call、event stream、approval、result envelope 的组合行为。
+- [x] 增加 end-to-end 测试。 现在有 agent runtime workflow 测试，覆盖
+      readFile、applyPatch dry-run、applyPatch 写入、gitStatus、getDiff、event
+      stream 和 result envelope 的组合行为。
 
 - [ ] 增加回归测试夹具。 对安全限制、路径逃逸、审批拒绝、patch
       失败等场景保留固定测试用例。

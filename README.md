@@ -467,6 +467,7 @@ The test suite covers the important safety behavior:
 - `editFile` behavior
 - `applyPatch` behavior, including dry-run previews
 - `gitStatus` behavior
+- agent runtime workflow from read to patch to git inspection
 - command execution state tracking
 - approval prompt formatting
 - command tool result envelope
@@ -500,9 +501,11 @@ This repo has been built step by step:
 15. Tool execution state tracking
 16. `applyPatch` dry-run previews
 17. `gitStatus`
+18. Agent runtime workflow test
 
 Good next topics:
 
+- file write approval
 - commit and PR workflow
 - better patch parser
 - per-tool logging
