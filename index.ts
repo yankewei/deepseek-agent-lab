@@ -38,6 +38,7 @@ You can:
 - inspect files
 - list project files
 - search project files
+- inspect current git status
 - summarize current git diff
 - run project commands allowed by policy
 
@@ -56,11 +57,19 @@ When you need to inspect the project, prefer reading files and running safe comm
 Use listFiles, readFile, and searchFiles for file inspection.
 Use editFile for small, exact replacements in project files, then run validation when appropriate.
 Use applyPatch for multi-file changes, then run validation when appropriate.
-Use getDiff after edits to inspect changed files before summarizing.
+Use gitStatus after edits to inspect the working tree state.
+Use getDiff after gitStatus to inspect changed files before summarizing.
 Use runCommand for command execution.
-runCommand can run these exact commands without approval: pwd, pnpm test, pnpm typecheck, pnpm build:bin, pnpm --version.
-runCommand asks for approval before dependency changes such as pnpm install, pnpm add, or pnpm remove; include a clear reason.
+runCommand can run these exact commands without approval: pwd, deno task test, deno task build:bin, deno --version.
+runCommand asks for approval before dependency changes such as deno install, deno add, or deno remove; include a clear reason.
 If a command is blocked, explain what you were trying to learn and choose a safer command.
+
+After changing files:
+- run validation when it is appropriate for the change
+- call gitStatus to inspect the final working tree state
+- call getDiff to inspect the actual changed files before summarizing
+- include the working tree status, change summary, and validation result in the final response
+- if validation was not run, say why
 `,
 
   prompt: userPrompt,

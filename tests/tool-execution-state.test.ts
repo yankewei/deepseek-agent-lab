@@ -7,6 +7,7 @@ import {
 import { createApplyPatchTool } from "../src/tools/apply-patch.ts";
 import { createEditFileTool } from "../src/tools/edit-file.ts";
 import { createGetDiffTool } from "../src/tools/get-diff.ts";
+import { createGitStatusTool } from "../src/tools/git-status.ts";
 import { createListFilesTool } from "../src/tools/list-files.ts";
 import { createReadFileTool } from "../src/tools/read-file.ts";
 import { createSearchFilesTool } from "../src/tools/search-files.ts";
@@ -156,6 +157,36 @@ describe("tool execution state tracking", () => {
       "completed",
     ]);
     expect(events.at(-1)?.record.toolName).toBe("getDiff");
+  });
+
+  it("tracks gitStatus tool execution", async () => {
+    const events: ExecutionEvent[] = [];
+    const tracker = createTracker(events);
+    const gitStatusTool = createGitStatusTool({
+      executionTracker: tracker,
+      executeGit: async (args) => ({
+        stdout: args.join(" "),
+        stderr: "",
+        exitCode: 0,
+      }),
+    });
+
+    const result = await gitStatusTool.execute?.({}, toolExecutionOptions);
+
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        stdout: "status --short",
+        stderr: "",
+        exitCode: 0,
+      },
+    });
+    expect(events.map((event) => event.record.status)).toEqual([
+      "created",
+      "running",
+      "completed",
+    ]);
+    expect(events.at(-1)?.record.toolName).toBe("gitStatus");
   });
 
   it("tracks editFile tool execution", async () => {

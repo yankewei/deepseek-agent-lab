@@ -104,7 +104,22 @@ The agent has dedicated tools instead of unrestricted shell access.
 | `searchFiles` | Search project files with `rg`                                    |
 | `editFile`    | Replace one exact text block in one file                          |
 | `applyPatch`  | Apply or preview a safe multi-file patch                          |
+| `gitStatus`   | Show the current git working tree status                          |
 | `runCommand`  | Run commands allowed by policy, asking for approval when required |
+
+## Work Summary Flow
+
+After changing files, the agent should close the loop before it summarizes:
+
+```text
+run validation when appropriate
+-> gitStatus
+-> getDiff
+-> final response with status, changes, and validation result
+```
+
+If validation is not run, the agent should say why. This keeps the final answer
+grounded in tool output instead of memory or guesses.
 
 ## Safety Model
 
@@ -451,6 +466,7 @@ The test suite covers the important safety behavior:
 - blocked write paths
 - `editFile` behavior
 - `applyPatch` behavior, including dry-run previews
+- `gitStatus` behavior
 - command execution state tracking
 - approval prompt formatting
 - command tool result envelope
@@ -483,10 +499,10 @@ This repo has been built step by step:
 14. Error taxonomy
 15. Tool execution state tracking
 16. `applyPatch` dry-run previews
+17. `gitStatus`
 
 Good next topics:
 
-- git diff summary tool
 - commit and PR workflow
 - better patch parser
 - per-tool logging

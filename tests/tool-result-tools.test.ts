@@ -4,6 +4,7 @@ import { expect } from "@std/expect";
 import { applyPatchTool } from "../src/tools/apply-patch.ts";
 import { editFileTool } from "../src/tools/edit-file.ts";
 import { getDiffTool } from "../src/tools/get-diff.ts";
+import { createGitStatusTool } from "../src/tools/git-status.ts";
 import { listFilesTool } from "../src/tools/list-files.ts";
 import { readFileTool } from "../src/tools/read-file.ts";
 import { searchFilesTool } from "../src/tools/search-files.ts";
@@ -91,6 +92,27 @@ describe("tool AgentToolResult wrappers", () => {
       ok: true,
       data: {
         mode: "stat",
+        exitCode: 0,
+      },
+    });
+  });
+
+  it("wraps gitStatus results", async () => {
+    const gitStatusTool = createGitStatusTool({
+      executeGit: async (args) => ({
+        stdout: args.join(" "),
+        stderr: "",
+        exitCode: 0,
+      }),
+    });
+
+    const result = await gitStatusTool.execute?.({}, toolExecutionOptions);
+
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        stdout: "status --short",
+        stderr: "",
         exitCode: 0,
       },
     });

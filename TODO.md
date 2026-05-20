@@ -127,9 +127,9 @@ coding agent 时的下一步清单。
 
 ## Git 和项目工作流
 
-- [ ] 增加 git status / diff / commit 工具。 现在有 `getDiff`，但 commit 和 push
-      还没有正式 tool。后面可以把 git 工作流也纳入 policy、approval 和 event
-      stream。
+- [x] 增加 git status / diff 工具。 现在有 `gitStatus` 和 `getDiff`，agent
+      可以先看工作区状态，再查看 diff。commit 和 push 还没有正式
+      tool。后面可以把 git 写操作也纳入 policy、approval 和 event stream。
 
 - [ ] 做提交前检查流程。 比如固定执行 `pnpm check`、查看 diff、生成 commit
       message、必要时请求用户确认。

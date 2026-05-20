@@ -1,6 +1,7 @@
 import { createApplyPatchTool } from "./apply-patch.ts";
 import { createEditFileTool } from "./edit-file.ts";
 import { createGetDiffTool } from "./get-diff.ts";
+import { createGitStatusTool } from "./git-status.ts";
 import { createListFilesTool } from "./list-files.ts";
 import { createReadFileTool } from "./read-file.ts";
 import type { ExecutionTracker } from "../execution-state.ts";
@@ -16,6 +17,9 @@ export function createTools(options?: { executionTracker?: ExecutionTracker }) {
       executionTracker: options?.executionTracker,
     }),
     getDiff: createGetDiffTool({ executionTracker: options?.executionTracker }),
+    gitStatus: createGitStatusTool({
+      executionTracker: options?.executionTracker,
+    }),
     listFiles: createListFilesTool({
       executionTracker: options?.executionTracker,
     }),

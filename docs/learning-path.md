@@ -216,10 +216,18 @@ Read [src/tools/get-diff.ts](../src/tools/get-diff.ts).
 Git tools help the agent explain its own work. A production coding agent should
 usually inspect its diff before summarizing changes.
 
-Practice task:
+Completed practice task:
 
 - Add a `gitStatus` tool that returns short status.
-- Keep command policy involved instead of bypassing safety rules.
+- Register it with `createTools`.
+- Track it through the same tool execution state wrapper as other tools.
+- Add final response rules that combine validation, `gitStatus`, and `getDiff`.
+
+Next practice task:
+
+- Add a final work summary helper if prompt-only rules become too loose.
+- Keep git write operations, such as commit and push, out of scope until
+  approval rules are designed.
 
 ## 10. Suggested Order
 
@@ -229,7 +237,7 @@ Use this order for future sessions:
 2. Add event `sequence` numbers.
 3. Add richer approval decisions.
 4. Add `applyPatch` dry-run mode. Done.
-5. Add `gitStatus`.
+5. Add `gitStatus`. Done.
 6. Write a short architecture document for runtime flow.
 
 Each step is small, testable, and directly connected to a real coding-agent
