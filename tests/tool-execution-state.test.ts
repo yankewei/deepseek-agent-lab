@@ -1,6 +1,9 @@
 import { describe, it } from "@std/testing/bdd";
 import { expect } from "@std/expect";
-import { createExecutionTracker, type ExecutionEvent } from "../src/execution-state.ts";
+import {
+  createExecutionTracker,
+  type ExecutionEvent,
+} from "../src/execution-state.ts";
 import { createApplyPatchTool } from "../src/tools/apply-patch.ts";
 import { createEditFileTool } from "../src/tools/edit-file.ts";
 import { createGetDiffTool } from "../src/tools/get-diff.ts";
@@ -45,7 +48,11 @@ describe("tool execution state tracking", () => {
           files: ["index.ts"],
         },
       });
-      expect(events.map((event) => event.record.status)).toEqual(["created", "running", "completed"]);
+      expect(events.map((event) => event.record.status)).toEqual([
+        "created",
+        "running",
+        "completed",
+      ]);
       expect(events.at(-1)?.record).toMatchObject({
         kind: "tool",
         toolName: "listFiles",
@@ -70,7 +77,11 @@ describe("tool execution state tracking", () => {
           code: "EXECUTION_FAILED",
         },
       });
-      expect(events.map((event) => event.record.status)).toEqual(["created", "running", "failed"]);
+      expect(events.map((event) => event.record.status)).toEqual([
+        "created",
+        "running",
+        "failed",
+      ]);
       expect(events.at(-1)?.record).toMatchObject({
         kind: "tool",
         toolName: "readFile",
@@ -83,7 +94,9 @@ describe("tool execution state tracking", () => {
     await withTempProject(async () => {
       const events: ExecutionEvent[] = [];
       const tracker = createTracker(events);
-      const searchFilesTool = createSearchFilesTool({ executionTracker: tracker });
+      const searchFilesTool = createSearchFilesTool({
+        executionTracker: tracker,
+      });
 
       await Deno.writeTextFile("index.ts", "const agent = true;\n");
 
@@ -103,7 +116,11 @@ describe("tool execution state tracking", () => {
           matches: [{ file: "index.ts", line: 1 }],
         },
       });
-      expect(events.map((event) => event.record.status)).toEqual(["created", "running", "completed"]);
+      expect(events.map((event) => event.record.status)).toEqual([
+        "created",
+        "running",
+        "completed",
+      ]);
       expect(events.at(-1)?.record.toolName).toBe("searchFiles");
     });
   });
@@ -133,7 +150,11 @@ describe("tool execution state tracking", () => {
         exitCode: 0,
       },
     });
-    expect(events.map((event) => event.record.status)).toEqual(["created", "running", "completed"]);
+    expect(events.map((event) => event.record.status)).toEqual([
+      "created",
+      "running",
+      "completed",
+    ]);
     expect(events.at(-1)?.record.toolName).toBe("getDiff");
   });
 
@@ -161,7 +182,11 @@ describe("tool execution state tracking", () => {
           changed: true,
         },
       });
-      expect(events.map((event) => event.record.status)).toEqual(["created", "running", "completed"]);
+      expect(events.map((event) => event.record.status)).toEqual([
+        "created",
+        "running",
+        "completed",
+      ]);
       expect(events.at(-1)?.record.toolName).toBe("editFile");
     });
   });
@@ -170,7 +195,9 @@ describe("tool execution state tracking", () => {
     await withTempProject(async () => {
       const events: ExecutionEvent[] = [];
       const tracker = createTracker(events);
-      const applyPatchTool = createApplyPatchTool({ executionTracker: tracker });
+      const applyPatchTool = createApplyPatchTool({
+        executionTracker: tracker,
+      });
 
       const result = await applyPatchTool.execute?.(
         {
@@ -186,9 +213,14 @@ describe("tool execution state tracking", () => {
         ok: true,
         data: {
           changedFiles: ["index.ts"],
+          dryRun: false,
         },
       });
-      expect(events.map((event) => event.record.status)).toEqual(["created", "running", "completed"]);
+      expect(events.map((event) => event.record.status)).toEqual([
+        "created",
+        "running",
+        "completed",
+      ]);
       expect(events.at(-1)?.record.toolName).toBe("applyPatch");
     });
   });

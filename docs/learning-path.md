@@ -1,7 +1,7 @@
 # Coding Agents Learning Path
 
-This project is a small lab for learning how coding agents work in practice.
-The goal is not to build a large framework. The goal is to understand the core
+This project is a small lab for learning how coding agents work in practice. The
+goal is not to build a large framework. The goal is to understand the core
 runtime pieces clearly enough that you can change them safely.
 
 ## 1. Agent Loop
@@ -155,8 +155,8 @@ createExecutionTracker({
 });
 ```
 
-This is enough for a CLI, but a UI or logger usually needs multiple
-subscribers and stable event ordering.
+This is enough for a CLI, but a UI or logger usually needs multiple subscribers
+and stable event ordering.
 
 Practice task:
 
@@ -170,7 +170,9 @@ Read [src/agent-tool-result.ts](../src/agent-tool-result.ts).
 Tools return a consistent envelope:
 
 ```ts
-{ ok, data, error, meta }
+{
+  ok, data, error, meta;
+}
 ```
 
 This matters because the model needs structured feedback. A failed tool call
@@ -191,14 +193,21 @@ Editing tools are where agent power becomes risky. Good editing tools need:
 - project-bound path checks
 - blocked sensitive paths
 - exact replacements or validated patches
+- dry-run previews before write operations
 - useful failure messages
 - tests for path escapes and generated files
 
-Practice task:
+Completed practice task:
 
-- Add a dry-run mode to `applyPatch`.
-- Return which files would change without writing them.
-- Keep the first version small.
+- `applyPatch` accepts `dryRun?: boolean`.
+- Dry-run mode returns `changedFiles` with `dryRun: true`.
+- Dry-run mode still validates paths and update hunks.
+- Dry-run mode does not create, delete, or modify files.
+
+Next practice task:
+
+- Return operation types such as add, update, and delete in the preview result.
+- Keep path and hunk validation in the preparation phase before any write.
 
 ## 9. Git Workflow
 
@@ -219,7 +228,7 @@ Use this order for future sessions:
 1. Add `durationMs` to execution records.
 2. Add event `sequence` numbers.
 3. Add richer approval decisions.
-4. Add `applyPatch` dry-run mode.
+4. Add `applyPatch` dry-run mode. Done.
 5. Add `gitStatus`.
 6. Write a short architecture document for runtime flow.
 

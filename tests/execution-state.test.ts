@@ -65,7 +65,12 @@ describe("execution state tracking", () => {
       normalizedCommand: "deno task test",
       exitCode: 0,
     });
-    expect(recordStatuses(tracker)).toEqual(["created", "policy_evaluated", "running", "completed"]);
+    expect(recordStatuses(tracker)).toEqual([
+      "created",
+      "policy_evaluated",
+      "running",
+      "completed",
+    ]);
   });
 
   it("tracks approval before running a prompt command", async () => {
@@ -151,7 +156,11 @@ describe("execution state tracking", () => {
       policyCode: "COMMAND_NOT_ALLOWED",
       error: "Command is not allowed: cat package.json",
     });
-    expect(recordStatuses(tracker)).toEqual(["created", "policy_evaluated", "failed"]);
+    expect(recordStatuses(tracker)).toEqual([
+      "created",
+      "policy_evaluated",
+      "failed",
+    ]);
   });
 
   it("tracks command execution errors as failed", async () => {
@@ -176,7 +185,12 @@ describe("execution state tracking", () => {
       policyCode: "LOW_RISK_COMMAND_ALLOWED",
       error: "test runner crashed",
     });
-    expect(recordStatuses(tracker)).toEqual(["created", "policy_evaluated", "running", "failed"]);
+    expect(recordStatuses(tracker)).toEqual([
+      "created",
+      "policy_evaluated",
+      "running",
+      "failed",
+    ]);
   });
 
   it("emits an event for every execution state change", async () => {
@@ -216,7 +230,10 @@ describe("execution state tracking", () => {
     const tracker = createTestTrackerWithEvents(events);
 
     const commandRecord = tracker.createRecord({ command: "deno task test" });
-    const toolRecord = tracker.createRecord({ kind: "tool", toolName: "listFiles" });
+    const toolRecord = tracker.createRecord({
+      kind: "tool",
+      toolName: "listFiles",
+    });
 
     tracker.updateRecord(commandRecord.id, { status: "running" });
     tracker.updateRecord(toolRecord.id, { status: "running" });
@@ -265,7 +282,11 @@ describe("execution state tracking", () => {
       status: "completed",
       durationMs: 2000,
     });
-    expect(recordStatuses(tracker)).toEqual(["created", "running", "completed"]);
+    expect(recordStatuses(tracker)).toEqual([
+      "created",
+      "running",
+      "completed",
+    ]);
   });
 
   it("tracks generic tool failures", async () => {

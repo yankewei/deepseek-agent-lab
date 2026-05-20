@@ -37,14 +37,14 @@ export type ExecutionRecord = {
 
 export type CreateExecutionRecordInput =
   | {
-      kind?: "command";
-      command: string;
-      reason?: string;
-    }
+    kind?: "command";
+    command: string;
+    reason?: string;
+  }
   | {
-      kind: "tool";
-      toolName: string;
-    };
+    kind: "tool";
+    toolName: string;
+  };
 
 export type ExecutionEvent = {
   type: "execution_state_changed";
@@ -146,7 +146,10 @@ export function createExecutionTracker(options?: {
         if (isTerminalStatus(nextStatus)) {
           const completedAt = update.completedAt ?? at;
           record.completedAt = completedAt;
-          record.durationMs = calculateDurationMs(record.startedAt, completedAt);
+          record.durationMs = calculateDurationMs(
+            record.startedAt,
+            completedAt,
+          );
         }
       }
 

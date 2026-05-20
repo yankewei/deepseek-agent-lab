@@ -15,7 +15,10 @@ export function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function createAgentError(code: AgentErrorCode, message: string): AgentError {
+export function createAgentError(
+  code: AgentErrorCode,
+  message: string,
+): AgentError {
   return {
     code,
     message,

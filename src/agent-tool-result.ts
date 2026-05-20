@@ -9,15 +9,15 @@ export type AgentToolResultMeta = {
 
 export type AgentToolResult<T> =
   | {
-      ok: true;
-      data: T;
-      meta?: AgentToolResultMeta;
-    }
+    ok: true;
+    data: T;
+    meta?: AgentToolResultMeta;
+  }
   | {
-      ok: false;
-      error: AgentError;
-      meta?: AgentToolResultMeta;
-    };
+    ok: false;
+    error: AgentError;
+    meta?: AgentToolResultMeta;
+  };
 
 export function okAgentToolResult<T>(
   data: T,

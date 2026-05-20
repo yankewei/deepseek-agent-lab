@@ -3,10 +3,19 @@ import { execa } from "execa";
 import { relative } from "@std/path";
 import { z } from "zod";
 import { toAgentToolResult } from "../agent-tool-result.ts";
-import { executeToolWithState, type ExecutionTracker } from "../execution-state.ts";
+import {
+  executeToolWithState,
+  type ExecutionTracker,
+} from "../execution-state.ts";
 import { resolveExistingProjectPath } from "../project-path.ts";
 
-const ignoredGlobs = ["!.git/**", "!node_modules/**", "!dist/**", "!build/**", "!.next/**"];
+const ignoredGlobs = [
+  "!.git/**",
+  "!node_modules/**",
+  "!dist/**",
+  "!build/**",
+  "!.next/**",
+];
 
 type SearchMatch = {
   file: string;
@@ -37,7 +46,9 @@ function parseRipgrepLine(line: string, root: string): SearchMatch | null {
   };
 }
 
-export function createSearchFilesTool(options?: { executionTracker?: ExecutionTracker }) {
+export function createSearchFilesTool(
+  options?: { executionTracker?: ExecutionTracker },
+) {
   return tool({
     description: "Search text in project files",
 
@@ -57,7 +68,9 @@ export function createSearchFilesTool(options?: { executionTracker?: ExecutionTr
             const projectPath = await resolveExistingProjectPath(path);
 
             // Check ripgrep availability
-            const rgVersion = await execa("rg", ["--version"], { reject: false });
+            const rgVersion = await execa("rg", ["--version"], {
+              reject: false,
+            });
             if (rgVersion.exitCode !== 0) {
               throw new Error(
                 "ripgrep (rg) is required for file search but not found in PATH.\n" +
@@ -91,7 +104,9 @@ export function createSearchFilesTool(options?: { executionTracker?: ExecutionTr
             }
 
             if (result.exitCode !== 0) {
-              throw new Error(result.stderr || `rg failed with exit code ${result.exitCode}`);
+              throw new Error(
+                result.stderr || `rg failed with exit code ${result.exitCode}`,
+              );
             }
 
             const matches = result.stdout
@@ -105,7 +120,7 @@ export function createSearchFilesTool(options?: { executionTracker?: ExecutionTr
               matches,
             };
           },
-        }),
+        })
       );
     },
   });

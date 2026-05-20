@@ -2,8 +2,14 @@ import { tool } from "ai";
 
 import { z } from "zod";
 import { toAgentToolResult } from "../agent-tool-result.ts";
-import { executeToolWithState, type ExecutionTracker } from "../execution-state.ts";
-import { resolveNewWritableProjectPath, resolveWritableProjectPath } from "../project-path.ts";
+import {
+  executeToolWithState,
+  type ExecutionTracker,
+} from "../execution-state.ts";
+import {
+  resolveNewWritableProjectPath,
+  resolveWritableProjectPath,
+} from "../project-path.ts";
 
 type AddOperation = {
   type: "add";
@@ -26,6 +32,13 @@ type UpdateOperation = {
 };
 
 type PatchOperation = AddOperation | DeleteOperation | UpdateOperation;
+
+type ProjectPath = Awaited<ReturnType<typeof resolveWritableProjectPath>>;
+
+type PreparedOperation =
+  | (AddOperation & { projectPath: ProjectPath })
+  | (DeleteOperation & { projectPath: ProjectPath })
+  | (UpdateOperation & { projectPath: ProjectPath; updatedText: string });
 
 function countOccurrences(text: string, search: string) {
   let count = 0;
@@ -99,7 +112,9 @@ function parseLinePatch(patch: string): PatchOperation[] {
       }
 
       if (contentLines.length === 0) {
-        throw new Error(`Add File must include at least one content line: ${filePath}`);
+        throw new Error(
+          `Add File must include at least one content line: ${filePath}`,
+        );
       }
 
       operations.push({
@@ -127,7 +142,9 @@ function parseLinePatch(patch: string): PatchOperation[] {
 
       while (index < lines.length - 1 && !isOperationStart(lines[index])) {
         if (!lines[index].startsWith("@@")) {
-          throw new Error(`Update File hunks must start with @@: ${lines[index]}`);
+          throw new Error(
+            `Update File hunks must start with @@: ${lines[index]}`,
+          );
         }
 
         index += 1;
@@ -152,7 +169,9 @@ function parseLinePatch(patch: string): PatchOperation[] {
           } else if (marker === "+") {
             newLines.push(text);
           } else {
-            throw new Error(`Hunk lines must start with space, -, or +: ${hunkLine}`);
+            throw new Error(
+              `Hunk lines must start with space, -, or +: ${hunkLine}`,
+            );
           }
 
           index += 1;
@@ -169,7 +188,9 @@ function parseLinePatch(patch: string): PatchOperation[] {
       }
 
       if (hunks.length === 0) {
-        throw new Error(`Update File must include at least one hunk: ${filePath}`);
+        throw new Error(
+          `Update File must include at least one hunk: ${filePath}`,
+        );
       }
 
       operations.push({
@@ -191,25 +212,74 @@ function parseLinePatch(patch: string): PatchOperation[] {
   return operations;
 }
 
-export async function applyPatch(input: { patch: string }) {
-  const operations = parseLinePatch(input.patch);
-  const validatedOperations = await Promise.all(
-    operations.map(async (operation) => {
-      if (operation.type === "add") {
-        return {
-          ...operation,
-          projectPath: await resolveNewWritableProjectPath(operation.path),
-        };
+async function preparePatchOperations(
+  operations: PatchOperation[],
+): Promise<PreparedOperation[]> {
+  const preparedOperations: PreparedOperation[] = [];
+
+  for (const operation of operations) {
+    if (operation.type === "add") {
+      preparedOperations.push({
+        ...operation,
+        projectPath: await resolveNewWritableProjectPath(operation.path),
+      });
+      continue;
+    }
+
+    const projectPath = await resolveWritableProjectPath(operation.path);
+
+    if (operation.type === "delete") {
+      preparedOperations.push({
+        ...operation,
+        projectPath,
+      });
+      continue;
+    }
+
+    let updatedText = await Deno.readTextFile(projectPath.absolutePath);
+
+    for (const hunk of operation.hunks) {
+      const occurrences = countOccurrences(updatedText, hunk.oldText);
+
+      if (occurrences === 0) {
+        throw new Error(
+          `Patch hunk was not found in ${projectPath.relativePath}.`,
+        );
       }
 
-      return {
-        ...operation,
-        projectPath: await resolveWritableProjectPath(operation.path),
-      };
-    }),
-  );
+      if (occurrences > 1) {
+        throw new Error(
+          `Patch hunk appears ${occurrences} times in ${projectPath.relativePath}; provide more context.`,
+        );
+      }
 
-  for (const operation of validatedOperations) {
+      updatedText = updatedText.replace(hunk.oldText, hunk.newText);
+    }
+
+    preparedOperations.push({
+      ...operation,
+      projectPath,
+      updatedText,
+    });
+  }
+
+  return preparedOperations;
+}
+
+export async function applyPatch(input: { patch: string; dryRun?: boolean }) {
+  const operations = parseLinePatch(input.patch);
+  const preparedOperations = await preparePatchOperations(operations);
+
+  if (input.dryRun) {
+    return {
+      changedFiles: preparedOperations.map((operation) =>
+        operation.projectPath.relativePath
+      ),
+      dryRun: true,
+    };
+  }
+
+  for (const operation of preparedOperations) {
     if (operation.type === "add") {
       const file = await Deno.open(operation.projectPath.absolutePath, {
         write: true,
@@ -225,47 +295,38 @@ export async function applyPatch(input: { patch: string }) {
       continue;
     }
 
-    let currentText = await Deno.readTextFile(operation.projectPath.absolutePath);
-
-    for (const hunk of operation.hunks) {
-      const occurrences = countOccurrences(currentText, hunk.oldText);
-
-      if (occurrences === 0) {
-        throw new Error(`Patch hunk was not found in ${operation.projectPath.relativePath}.`);
-      }
-
-      if (occurrences > 1) {
-        throw new Error(
-          `Patch hunk appears ${occurrences} times in ${operation.projectPath.relativePath}; provide more context.`,
-        );
-      }
-
-      currentText = currentText.replace(hunk.oldText, hunk.newText);
-    }
-
-    await Deno.writeTextFile(operation.projectPath.absolutePath, currentText);
+    await Deno.writeTextFile(
+      operation.projectPath.absolutePath,
+      operation.updatedText,
+    );
   }
 
   return {
-    changedFiles: validatedOperations.map((operation) => operation.projectPath.relativePath),
+    changedFiles: preparedOperations.map((operation) =>
+      operation.projectPath.relativePath
+    ),
+    dryRun: false,
   };
 }
 
-export function createApplyPatchTool(options?: { executionTracker?: ExecutionTracker }) {
+export function createApplyPatchTool(
+  options?: { executionTracker?: ExecutionTracker },
+) {
   return tool({
     description: "Apply a safe multi-file patch inside the current project",
 
     inputSchema: z.object({
       patch: z.string().min(1),
+      dryRun: z.boolean().optional(),
     }),
 
-    execute: async ({ patch }) => {
+    execute: async ({ patch, dryRun }) => {
       return await toAgentToolResult(async () =>
         await executeToolWithState({
           toolName: "applyPatch",
           tracker: options?.executionTracker,
-          run: async () => await applyPatch({ patch }),
-        }),
+          run: async () => await applyPatch({ patch, dryRun }),
+        })
       );
     },
   });

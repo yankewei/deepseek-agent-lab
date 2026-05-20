@@ -1,6 +1,10 @@
 import { describe, it } from "@std/testing/bdd";
 import { expect } from "@std/expect";
-import { formatApprovalRequest, requestApproval, type ApprovalRequest } from "../src/approval.ts";
+import {
+  type ApprovalRequest,
+  formatApprovalRequest,
+  requestApproval,
+} from "../src/approval.ts";
 
 describe("requestApproval", () => {
   it("delegates approval decisions to the configured prompt", async () => {

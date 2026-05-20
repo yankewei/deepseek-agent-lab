@@ -1,6 +1,9 @@
 import { describe, it } from "@std/testing/bdd";
 import { expect } from "@std/expect";
-import { errorAgentToolResult, okAgentToolResult } from "../src/agent-tool-result.ts";
+import {
+  errorAgentToolResult,
+  okAgentToolResult,
+} from "../src/agent-tool-result.ts";
 
 describe("AgentToolResult", () => {
   it("wraps successful tool data", () => {

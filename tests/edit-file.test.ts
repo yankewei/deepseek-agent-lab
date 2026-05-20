@@ -6,7 +6,10 @@ import { withTempProject } from "./helpers/temp-project.ts";
 describe("editFile", () => {
   it("replaces one exact text block", async () => {
     await withTempProject(async () => {
-      await Deno.writeTextFile("index.ts", "const name = 'agent';\nconsole.log(name);\n");
+      await Deno.writeTextFile(
+        "index.ts",
+        "const name = 'agent';\nconsole.log(name);\n",
+      );
 
       const result = await editFile({
         path: "index.ts",
@@ -15,13 +18,18 @@ describe("editFile", () => {
       });
 
       expect(result).toEqual({ path: "index.ts", changed: true });
-      expect(await Deno.readTextFile("index.ts")).toBe("const name = 'coding-agent';\nconsole.log(name);\n");
+      expect(await Deno.readTextFile("index.ts")).toBe(
+        "const name = 'coding-agent';\nconsole.log(name);\n",
+      );
     });
   });
 
   it("rejects missing or ambiguous oldText", async () => {
     await withTempProject(async () => {
-      await Deno.writeTextFile("index.ts", "const value = 1;\nconst value = 1;\n");
+      await Deno.writeTextFile(
+        "index.ts",
+        "const value = 1;\nconst value = 1;\n",
+      );
 
       await expect(
         editFile({

@@ -11,7 +11,10 @@ export type ApprovalRequest = {
   details: Record<string, string>;
 };
 
-export type ApprovalDecision = "approve_once" | "always_allow_command_prefix" | "deny";
+export type ApprovalDecision =
+  | "approve_once"
+  | "always_allow_command_prefix"
+  | "deny";
 
 export type ApprovalPolicyAmendment = {
   type: "allow-command-prefix";
@@ -24,7 +27,9 @@ export type ApprovalResult = {
   policyAmendment?: ApprovalPolicyAmendment;
 };
 
-export type ApprovalPrompt = (request: ApprovalRequest) => Promise<ApprovalResult>;
+export type ApprovalPrompt = (
+  request: ApprovalRequest,
+) => Promise<ApprovalResult>;
 
 export function formatApprovalRequest(request: ApprovalRequest) {
   const lines = [
@@ -59,7 +64,9 @@ export function formatApprovalRequest(request: ApprovalRequest) {
   lines.push("", "Options:", "  y - approve once");
 
   if (request.suggestedPolicyAmendment) {
-    lines.push(`  a - always allow prefix: ${request.suggestedPolicyAmendment.prefix}`);
+    lines.push(
+      `  a - always allow prefix: ${request.suggestedPolicyAmendment.prefix}`,
+    );
   }
 
   lines.push("  n - deny", "");
@@ -75,7 +82,9 @@ export async function promptForApproval(request: ApprovalRequest) {
     };
   }
 
-  await Deno.stdout.write(new TextEncoder().encode(formatApprovalRequest(request)));
+  await Deno.stdout.write(
+    new TextEncoder().encode(formatApprovalRequest(request)),
+  );
   const answer = (await prompt("Approve? [y/a/N] ")) ?? "";
 
   if (answer.toLowerCase() === "y") {
@@ -92,6 +101,9 @@ export async function promptForApproval(request: ApprovalRequest) {
   return { decision: "deny" as const };
 }
 
-export async function requestApproval(request: ApprovalRequest, prompt: ApprovalPrompt = promptForApproval) {
+export async function requestApproval(
+  request: ApprovalRequest,
+  prompt: ApprovalPrompt = promptForApproval,
+) {
   return await prompt(request);
 }

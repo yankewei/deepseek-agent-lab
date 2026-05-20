@@ -6,7 +6,10 @@ import { withTempProject } from "./helpers/temp-project.ts";
 describe("applyPatch", () => {
   it("can update an existing file", async () => {
     await withTempProject(async () => {
-      await Deno.writeTextFile("index.ts", "const name = 'agent';\nconsole.log(name);\n");
+      await Deno.writeTextFile(
+        "index.ts",
+        "const name = 'agent';\nconsole.log(name);\n",
+      );
 
       const result = await applyPatch({
         patch: `*** Begin Patch
@@ -18,8 +21,35 @@ describe("applyPatch", () => {
 *** End Patch`,
       });
 
-      expect(result).toEqual({ changedFiles: ["index.ts"] });
-      expect(await Deno.readTextFile("index.ts")).toBe("const name = 'coding-agent';\nconsole.log(name);\n");
+      expect(result).toEqual({ changedFiles: ["index.ts"], dryRun: false });
+      expect(await Deno.readTextFile("index.ts")).toBe(
+        "const name = 'coding-agent';\nconsole.log(name);\n",
+      );
+    });
+  });
+
+  it("can preview an update without writing the file", async () => {
+    await withTempProject(async () => {
+      await Deno.writeTextFile(
+        "index.ts",
+        "const name = 'agent';\nconsole.log(name);\n",
+      );
+
+      const result = await applyPatch({
+        patch: `*** Begin Patch
+*** Update File: index.ts
+@@
+-const name = 'agent';
++const name = 'coding-agent';
+ console.log(name);
+*** End Patch`,
+        dryRun: true,
+      });
+
+      expect(result).toEqual({ changedFiles: ["index.ts"], dryRun: true });
+      expect(await Deno.readTextFile("index.ts")).toBe(
+        "const name = 'agent';\nconsole.log(name);\n",
+      );
     });
   });
 
@@ -36,9 +66,48 @@ describe("applyPatch", () => {
 *** End Patch`,
       });
 
-      expect(result).toEqual({ changedFiles: ["new.txt", "old.txt"] });
+      expect(result).toEqual({
+        changedFiles: ["new.txt", "old.txt"],
+        dryRun: false,
+      });
       expect(await Deno.readTextFile("new.txt")).toBe("hello\nworld\n");
-      await expect(Deno.readTextFile("old.txt")).rejects.toThrow(/No such file/);
+      await expect(Deno.readTextFile("old.txt")).rejects.toThrow(
+        /No such file/,
+      );
+    });
+  });
+
+  it("can preview adding a file without creating it", async () => {
+    await withTempProject(async () => {
+      const result = await applyPatch({
+        patch: `*** Begin Patch
+*** Add File: new.txt
++hello
++world
+*** End Patch`,
+        dryRun: true,
+      });
+
+      expect(result).toEqual({ changedFiles: ["new.txt"], dryRun: true });
+      await expect(Deno.readTextFile("new.txt")).rejects.toThrow(
+        /No such file/,
+      );
+    });
+  });
+
+  it("can preview deleting a file without removing it", async () => {
+    await withTempProject(async () => {
+      await Deno.writeTextFile("old.txt", "remove me\n");
+
+      const result = await applyPatch({
+        patch: `*** Begin Patch
+*** Delete File: old.txt
+*** End Patch`,
+        dryRun: true,
+      });
+
+      expect(result).toEqual({ changedFiles: ["old.txt"], dryRun: true });
+      expect(await Deno.readTextFile("old.txt")).toBe("remove me\n");
     });
   });
 
@@ -80,9 +149,72 @@ describe("applyPatch", () => {
     });
   });
 
+  it("rejects blocked files during dry-run without applying changes", async () => {
+    await withTempProject(async () => {
+      await Deno.writeTextFile("index.ts", "const safe = true;\n");
+      await Deno.writeTextFile(".env", "TOKEN=secret\n");
+
+      await expect(
+        applyPatch({
+          patch: `*** Begin Patch
+*** Update File: index.ts
+@@
+-const safe = true;
++const safe = false;
+*** Update File: .env
+@@
+-TOKEN=secret
++TOKEN=changed
+*** End Patch`,
+          dryRun: true,
+        }),
+      ).rejects.toThrow(/File is not writable/);
+
+      expect(await Deno.readTextFile("index.ts")).toBe("const safe = true;\n");
+      expect(await Deno.readTextFile(".env")).toBe("TOKEN=secret\n");
+    });
+  });
+
+  it("rejects paths outside the project during dry-run", async () => {
+    await withTempProject(async () => {
+      await expect(
+        applyPatch({
+          patch: `*** Begin Patch
+*** Add File: ../outside.txt
++nope
+*** End Patch`,
+          dryRun: true,
+        }),
+      ).rejects.toThrow(/Path must stay inside the current project/);
+    });
+  });
+
+  it("rejects missing update hunks during dry-run", async () => {
+    await withTempProject(async () => {
+      await Deno.writeTextFile("index.ts", "const value = 1;\n");
+
+      await expect(
+        applyPatch({
+          patch: `*** Begin Patch
+*** Update File: index.ts
+@@
+-const value = 2;
++const value = 3;
+*** End Patch`,
+          dryRun: true,
+        }),
+      ).rejects.toThrow(/Patch hunk was not found/);
+
+      expect(await Deno.readTextFile("index.ts")).toBe("const value = 1;\n");
+    });
+  });
+
   it("rejects ambiguous update hunks", async () => {
     await withTempProject(async () => {
-      await Deno.writeTextFile("index.ts", "const value = 1;\nconst value = 1;\n");
+      await Deno.writeTextFile(
+        "index.ts",
+        "const value = 1;\nconst value = 1;\n",
+      );
 
       await expect(
         applyPatch({
@@ -94,6 +226,31 @@ describe("applyPatch", () => {
 *** End Patch`,
         }),
       ).rejects.toThrow(/provide more context/);
+    });
+  });
+
+  it("rejects ambiguous update hunks during dry-run", async () => {
+    await withTempProject(async () => {
+      await Deno.writeTextFile(
+        "index.ts",
+        "const value = 1;\nconst value = 1;\n",
+      );
+
+      await expect(
+        applyPatch({
+          patch: `*** Begin Patch
+*** Update File: index.ts
+@@
+-const value = 1;
++const value = 2;
+*** End Patch`,
+          dryRun: true,
+        }),
+      ).rejects.toThrow(/provide more context/);
+
+      expect(await Deno.readTextFile("index.ts")).toBe(
+        "const value = 1;\nconst value = 1;\n",
+      );
     });
   });
 });

@@ -1,11 +1,14 @@
 import { tool } from "ai";
 import { z } from "zod";
 import {
+  type AgentToolResult,
   errorAgentToolResult,
   okAgentToolResult,
-  type AgentToolResult,
 } from "../agent-tool-result.ts";
-import { executeCommandWithPolicy, type ExecuteRun } from "../command-executor.ts";
+import {
+  executeCommandWithPolicy,
+  type ExecuteRun,
+} from "../command-executor.ts";
 import type { ExecutionTracker } from "../execution-state.ts";
 import type { ApprovalPrompt } from "../approval.ts";
 import { classifyCommandExecutionError } from "../errors.ts";
@@ -13,10 +16,10 @@ import { createRuntimeCommandPolicy } from "../policy.ts";
 
 type RunCommandToolData =
   | {
-      stdout: string;
-      stderr: string;
-      exitCode: number;
-    }
+    stdout: string;
+    stderr: string;
+    exitCode: number;
+  }
   | null;
 
 export function createRunCommandTool(options?: {
@@ -27,14 +30,17 @@ export function createRunCommandTool(options?: {
   const runtimePolicy = createRuntimeCommandPolicy();
 
   return tool({
-    description: "Run a project command allowed by policy, asking for approval when required",
+    description:
+      "Run a project command allowed by policy, asking for approval when required",
 
     inputSchema: z.object({
       command: z.string(),
       reason: z.string().optional(),
     }),
 
-    execute: async ({ command, reason }): Promise<AgentToolResult<RunCommandToolData>> => {
+    execute: async (
+      { command, reason },
+    ): Promise<AgentToolResult<RunCommandToolData>> => {
       try {
         const result = await executeCommandWithPolicy(
           { command, reason },

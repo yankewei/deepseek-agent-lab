@@ -97,14 +97,14 @@ The executable still reads configuration from the environment, so keep using
 
 The agent has dedicated tools instead of unrestricted shell access.
 
-| Tool | Purpose |
-| --- | --- |
-| `listFiles` | List files inside the current project |
-| `readFile` | Read a project file |
-| `searchFiles` | Search project files with `rg` |
-| `editFile` | Replace one exact text block in one file |
-| `applyPatch` | Apply a safe multi-file patch |
-| `runCommand` | Run commands allowed by policy, asking for approval when required |
+| Tool          | Purpose                                                           |
+| ------------- | ----------------------------------------------------------------- |
+| `listFiles`   | List files inside the current project                             |
+| `readFile`    | Read a project file                                               |
+| `searchFiles` | Search project files with `rg`                                    |
+| `editFile`    | Replace one exact text block in one file                          |
+| `applyPatch`  | Apply or preview a safe multi-file patch                          |
+| `runCommand`  | Run commands allowed by policy, asking for approval when required |
 
 ## Safety Model
 
@@ -115,8 +115,8 @@ Do not let the model use native shell commands as a general toolbox.
 Wrap common actions in dedicated, safer tools.
 ```
 
-Command safety is handled through a small policy engine. Before any command runs,
-the project classifies it into one of three decisions:
+Command safety is handled through a small policy engine. Before any command
+runs, the project classifies it into one of three decisions:
 
 ```text
 allow      -> run immediately
@@ -323,24 +323,27 @@ outer protocol and puts a small business-level envelope inside the tool output:
 ```ts
 type AgentToolResult<T> =
   | {
-      ok: true;
-      data: T;
-      meta?: {
-        executionId?: string;
-        skipped?: boolean;
-        approvalRequired?: boolean;
-      };
-    }
-  | {
-      ok: false;
-      error: {
-        code: "POLICY_FORBIDDEN" | "APPROVAL_REASON_REQUIRED" | "EXECUTION_FAILED";
-        message: string;
-      };
-      meta?: {
-        executionId?: string;
-      };
+    ok: true;
+    data: T;
+    meta?: {
+      executionId?: string;
+      skipped?: boolean;
+      approvalRequired?: boolean;
     };
+  }
+  | {
+    ok: false;
+    error: {
+      code:
+        | "POLICY_FORBIDDEN"
+        | "APPROVAL_REASON_REQUIRED"
+        | "EXECUTION_FAILED";
+      message: string;
+    };
+    meta?: {
+      executionId?: string;
+    };
+  };
 ```
 
 For tools, this means:
@@ -373,8 +376,8 @@ APPROVAL_REASON_REQUIRED -> a prompt command did not include a reason
 EXECUTION_FAILED         -> command execution failed unexpectedly
 ```
 
-`AgentToolResult` reuses this shared error type instead of defining tool-specific
-error objects in each tool.
+`AgentToolResult` reuses this shared error type instead of defining
+tool-specific error objects in each tool.
 
 ## Editing Strategy
 
@@ -398,7 +401,8 @@ It takes:
 
 ### `applyPatch`
 
-Use this for larger or multi-file changes.
+Use this for larger or multi-file changes. It can either apply the patch or run
+in dry-run mode to preview the files that would change without writing anything.
 
 It supports a small patch format:
 
@@ -411,7 +415,30 @@ It supports a small patch format:
 *** End Patch
 ```
 
-Before applying a patch, the agent parses every touched file and validates all paths first. If any file is blocked, nothing is written.
+The tool input is:
+
+```ts
+{
+  patch: string;
+  dryRun?: boolean;
+}
+```
+
+The result is:
+
+```ts
+{
+  changedFiles: string[];
+  dryRun: boolean;
+}
+```
+
+Before applying a patch, the agent parses every touched file, validates all
+paths, and verifies update hunks. If any file is blocked or any update hunk is
+missing or ambiguous, nothing is written.
+
+When `dryRun` is `true`, the same parsing and safety checks still run, but the
+tool returns the preview result without creating, deleting, or modifying files.
 
 ## Tests
 
@@ -423,7 +450,7 @@ The test suite covers the important safety behavior:
 - symlink escape prevention
 - blocked write paths
 - `editFile` behavior
-- `applyPatch` behavior
+- `applyPatch` behavior, including dry-run previews
 - command execution state tracking
 - approval prompt formatting
 - command tool result envelope
@@ -455,6 +482,7 @@ This repo has been built step by step:
 13. Agent tool result envelope
 14. Error taxonomy
 15. Tool execution state tracking
+16. `applyPatch` dry-run previews
 
 Good next topics:
 

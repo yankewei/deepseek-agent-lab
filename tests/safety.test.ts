@@ -1,6 +1,9 @@
 import { describe, it } from "@std/testing/bdd";
 import { expect } from "@std/expect";
-import { createRuntimeCommandPolicy, evaluateCommandPolicy } from "../src/policy.ts";
+import {
+  createRuntimeCommandPolicy,
+  evaluateCommandPolicy,
+} from "../src/policy.ts";
 
 describe("command policy", () => {
   it("classifies commands before execution", () => {
@@ -39,7 +42,8 @@ describe("command policy", () => {
       type: "forbidden",
       code: "SHELL_OPERATOR_BLOCKED",
       command: "deno task test && cat .env",
-      reason: "Shell operator is not allowed in command: deno task test && cat .env",
+      reason:
+        "Shell operator is not allowed in command: deno task test && cat .env",
     });
   });
 
@@ -57,11 +61,17 @@ describe("command policy", () => {
   it("stores process-local allowed command prefixes", () => {
     const runtimePolicy = createRuntimeCommandPolicy();
 
-    expect(runtimePolicy.isCommandAllowedByPrefix("deno add npm:zod")).toBe(false);
+    expect(runtimePolicy.isCommandAllowedByPrefix("deno add npm:zod")).toBe(
+      false,
+    );
 
     runtimePolicy.allowCommandPrefix(" deno   add ");
 
-    expect(runtimePolicy.isCommandAllowedByPrefix("deno add npm:zod")).toBe(true);
-    expect(runtimePolicy.isCommandAllowedByPrefix("deno remove zod")).toBe(false);
+    expect(runtimePolicy.isCommandAllowedByPrefix("deno add npm:zod")).toBe(
+      true,
+    );
+    expect(runtimePolicy.isCommandAllowedByPrefix("deno remove zod")).toBe(
+      false,
+    );
   });
 });

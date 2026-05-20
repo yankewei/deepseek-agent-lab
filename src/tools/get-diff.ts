@@ -2,7 +2,10 @@ import { tool } from "ai";
 import { execa } from "execa";
 import { z } from "zod";
 import { toAgentToolResult } from "../agent-tool-result.ts";
-import { executeToolWithState, type ExecutionTracker } from "../execution-state.ts";
+import {
+  executeToolWithState,
+  type ExecutionTracker,
+} from "../execution-state.ts";
 
 type DiffMode = "stat" | "name-only" | "full";
 
@@ -61,7 +64,7 @@ export function createGetDiffTool(options?: {
           toolName: "getDiff",
           tracker: options?.executionTracker,
           run: async () => await getDiff({ mode }, options?.executeGit),
-        }),
+        })
       );
     },
   });

@@ -2,10 +2,19 @@ import { tool } from "ai";
 import { join, relative } from "@std/path";
 import { z } from "zod";
 import { toAgentToolResult } from "../agent-tool-result.ts";
-import { executeToolWithState, type ExecutionTracker } from "../execution-state.ts";
+import {
+  executeToolWithState,
+  type ExecutionTracker,
+} from "../execution-state.ts";
 import { resolveExistingProjectPath } from "../project-path.ts";
 
-const ignoredDirectories = new Set([".git", "node_modules", "dist", "build", ".next"]);
+const ignoredDirectories = new Set([
+  ".git",
+  "node_modules",
+  "dist",
+  "build",
+  ".next",
+]);
 
 async function listProjectFiles(directory: string, maxDepth: number) {
   const projectPath = await resolveExistingProjectPath(directory);
@@ -40,7 +49,9 @@ async function listProjectFiles(directory: string, maxDepth: number) {
   return files.sort();
 }
 
-export function createListFilesTool(options?: { executionTracker?: ExecutionTracker }) {
+export function createListFilesTool(
+  options?: { executionTracker?: ExecutionTracker },
+) {
   return tool({
     description: "List files in the current project",
 
@@ -57,7 +68,7 @@ export function createListFilesTool(options?: { executionTracker?: ExecutionTrac
           run: async () => ({
             files: await listProjectFiles(path, maxDepth),
           }),
-        }),
+        })
       );
     },
   });

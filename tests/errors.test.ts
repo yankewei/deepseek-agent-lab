@@ -20,28 +20,46 @@ describe("Agent errors", () => {
   });
 
   it("classifies policy errors from command execution", () => {
-    expect(classifyCommandExecutionError(new Error("Command is not allowed: cat package.json"))).toEqual({
+    expect(
+      classifyCommandExecutionError(
+        new Error("Command is not allowed: cat package.json"),
+      ),
+    ).toEqual({
       code: "POLICY_FORBIDDEN",
       message: "Command is not allowed: cat package.json",
     });
 
-    expect(classifyCommandExecutionError(new Error("Shell operator is not allowed in command: deno task test && cat .env"))).toEqual({
+    expect(
+      classifyCommandExecutionError(
+        new Error(
+          "Shell operator is not allowed in command: deno task test && cat .env",
+        ),
+      ),
+    ).toEqual({
       code: "POLICY_FORBIDDEN",
-      message: "Shell operator is not allowed in command: deno task test && cat .env",
+      message:
+        "Shell operator is not allowed in command: deno task test && cat .env",
     });
   });
 
   it("classifies missing approval reasons", () => {
-    expect(classifyCommandExecutionError(new Error("Approval reason is required for command: deno add npm:vitest"))).toEqual({
+    expect(
+      classifyCommandExecutionError(
+        new Error(
+          "Approval reason is required for command: deno add npm:vitest",
+        ),
+      ),
+    ).toEqual({
       code: "APPROVAL_REASON_REQUIRED",
       message: "Approval reason is required for command: deno add npm:vitest",
     });
   });
 
   it("classifies unknown command failures as execution failures", () => {
-    expect(classifyCommandExecutionError(new Error("test runner crashed"))).toEqual({
-      code: "EXECUTION_FAILED",
-      message: "test runner crashed",
-    });
+    expect(classifyCommandExecutionError(new Error("test runner crashed")))
+      .toEqual({
+        code: "EXECUTION_FAILED",
+        message: "test runner crashed",
+      });
   });
 });

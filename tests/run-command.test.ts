@@ -27,9 +27,10 @@ describe("executeCommandWithPolicy", () => {
   });
 
   it("requires a reason for commands that need approval", async () => {
-    await expect(executeCommandWithPolicy({ command: "deno add npm:vitest" })).rejects.toThrow(
-      /Approval reason is required/,
-    );
+    await expect(executeCommandWithPolicy({ command: "deno add npm:vitest" }))
+      .rejects.toThrow(
+        /Approval reason is required/,
+      );
   });
 
   it("skips execution when approval is denied", async () => {

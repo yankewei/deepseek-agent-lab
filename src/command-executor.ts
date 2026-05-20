@@ -1,5 +1,5 @@
 import { execa } from "execa";
-import { requestApproval, type ApprovalPrompt } from "./approval.ts";
+import { type ApprovalPrompt, requestApproval } from "./approval.ts";
 import type { ExecutionTracker } from "./execution-state.ts";
 import {
   evaluateCommandPolicy,
@@ -18,19 +18,19 @@ export type ExecuteRun = (
 
 export type CommandExecutionResult =
   | {
-      approved: boolean;
-      approvalRequired: boolean;
-      skipped: true;
-      executionId?: string;
-    }
+    approved: boolean;
+    approvalRequired: boolean;
+    skipped: true;
+    executionId?: string;
+  }
   | {
-      approved: boolean;
-      approvalRequired: boolean;
-      stdout: string;
-      stderr: string;
-      exitCode: number;
-      executionId?: string;
-    };
+    approved: boolean;
+    approvalRequired: boolean;
+    stdout: string;
+    stderr: string;
+    exitCode: number;
+    executionId?: string;
+  };
 
 export async function executeCommandWithPolicy(
   input: { command: string; reason?: string },
@@ -56,7 +56,9 @@ export async function executeCommandWithPolicy(
   });
   let terminalRecorded = false;
 
-  const withExecutionId = <T extends Omit<CommandExecutionResult, "executionId">>(result: T) => {
+  const withExecutionId = <
+    T extends Omit<CommandExecutionResult, "executionId">,
+  >(result: T) => {
     return record ? { ...result, executionId: record.id } : result;
   };
 
@@ -96,9 +98,13 @@ export async function executeCommandWithPolicy(
     let approvalRequired = decision.type === "prompt";
     let approved = false;
 
-    if (decision.type === "prompt" && !runtimePolicy?.isCommandAllowedByPrefix(decision.command)) {
+    if (
+      decision.type === "prompt" &&
+      !runtimePolicy?.isCommandAllowedByPrefix(decision.command)
+    ) {
       if (!reason) {
-        const error = `Approval reason is required for command: ${decision.command}`;
+        const error =
+          `Approval reason is required for command: ${decision.command}`;
         recordFailure(error);
         throw new Error(error);
       }
@@ -107,12 +113,14 @@ export async function executeCommandWithPolicy(
         status: "waiting_for_approval",
       });
 
-      const suggestedPolicyAmendment = getApprovableCommandPrefix(decision.command)
-        ? {
+      const suggestedPolicyAmendment =
+        getApprovableCommandPrefix(decision.command)
+          ? {
             type: "allow-command-prefix" as const,
-            prefix: getApprovableCommandPrefix(decision.command) ?? decision.command,
+            prefix: getApprovableCommandPrefix(decision.command) ??
+              decision.command,
           }
-        : undefined;
+          : undefined;
 
       const approval = await requestApproval(
         {

@@ -135,6 +135,7 @@ describe("tool AgentToolResult wrappers", () => {
         ok: true,
         data: {
           changedFiles: ["index.ts"],
+          dryRun: false,
         },
       });
     });

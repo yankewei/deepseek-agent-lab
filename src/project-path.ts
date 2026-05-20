@@ -26,10 +26,14 @@ function assertWritableRelativePath(relativePath: string) {
     throw new Error(`File is not writable by the agent: ${relativePath}`);
   }
 
-  const blockedDirectory = pathParts.find((part) => blockedWriteDirectories.has(part));
+  const blockedDirectory = pathParts.find((part) =>
+    blockedWriteDirectories.has(part)
+  );
 
   if (blockedDirectory) {
-    throw new Error(`Directory is not writable by the agent: ${blockedDirectory}`);
+    throw new Error(
+      `Directory is not writable by the agent: ${blockedDirectory}`,
+    );
   }
 }
 

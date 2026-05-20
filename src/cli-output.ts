@@ -1,4 +1,3 @@
-
 import type { ExecutionEvent } from "./execution-state.ts";
 
 const divider = "─".repeat(72);

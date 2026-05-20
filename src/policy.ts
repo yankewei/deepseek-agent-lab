@@ -16,25 +16,31 @@ export type CommandPolicyCode =
   | "SHELL_OPERATOR_BLOCKED"
   | "COMMAND_NOT_ALLOWED";
 
-export type PolicyDecision<Code extends string = string, Subject extends object = object> =
+export type PolicyDecision<
+  Code extends string = string,
+  Subject extends object = object,
+> =
   | ({
-      type: "allow";
-      code: Code;
-      reason: string;
-    } & Subject)
+    type: "allow";
+    code: Code;
+    reason: string;
+  } & Subject)
   | ({
-      type: "prompt";
-      code: Code;
-      reason: string;
-      riskLevel: RiskLevel;
-    } & Subject)
+    type: "prompt";
+    code: Code;
+    reason: string;
+    riskLevel: RiskLevel;
+  } & Subject)
   | ({
-      type: "forbidden";
-      code: Code;
-      reason: string;
-    } & Subject);
+    type: "forbidden";
+    code: Code;
+    reason: string;
+  } & Subject);
 
-export type CommandPolicyDecision = PolicyDecision<CommandPolicyCode, { command: string }>;
+export type CommandPolicyDecision = PolicyDecision<
+  CommandPolicyCode,
+  { command: string }
+>;
 
 function normalizeCommand(command: string) {
   return command.trim().split(/\s+/).join(" ");
@@ -67,7 +73,8 @@ export function createRuntimeCommandPolicy(): RuntimeCommandPolicy {
       const normalized = normalizeCommand(command);
 
       return Array.from(allowedCommandPrefixes).some(
-        (prefix) => normalized === prefix || normalized.startsWith(`${prefix} `),
+        (prefix) =>
+          normalized === prefix || normalized.startsWith(`${prefix} `),
       );
     },
   };

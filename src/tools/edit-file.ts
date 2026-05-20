@@ -1,7 +1,10 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { toAgentToolResult } from "../agent-tool-result.ts";
-import { executeToolWithState, type ExecutionTracker } from "../execution-state.ts";
+import {
+  executeToolWithState,
+  type ExecutionTracker,
+} from "../execution-state.ts";
 import { resolveWritableProjectPath } from "../project-path.ts";
 
 function countOccurrences(text: string, search: string) {
@@ -20,7 +23,9 @@ function countOccurrences(text: string, search: string) {
   }
 }
 
-export async function editFile(input: { path: string; oldText: string; newText: string }) {
+export async function editFile(
+  input: { path: string; oldText: string; newText: string },
+) {
   const projectPath = await resolveWritableProjectPath(input.path);
   const currentText = await Deno.readTextFile(projectPath.absolutePath);
   const occurrences = countOccurrences(currentText, input.oldText);
@@ -45,9 +50,12 @@ export async function editFile(input: { path: string; oldText: string; newText: 
   };
 }
 
-export function createEditFileTool(options?: { executionTracker?: ExecutionTracker }) {
+export function createEditFileTool(
+  options?: { executionTracker?: ExecutionTracker },
+) {
   return tool({
-    description: "Edit an existing project file by replacing one exact text block",
+    description:
+      "Edit an existing project file by replacing one exact text block",
 
     inputSchema: z.object({
       path: z.string(),
@@ -61,7 +69,7 @@ export function createEditFileTool(options?: { executionTracker?: ExecutionTrack
           toolName: "editFile",
           tracker: options?.executionTracker,
           run: async () => await editFile({ path, oldText, newText }),
-        }),
+        })
       );
     },
   });

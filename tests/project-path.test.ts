@@ -1,7 +1,10 @@
 import { join } from "@std/path";
 import { describe, it } from "@std/testing/bdd";
 import { expect } from "@std/expect";
-import { resolveExistingProjectPath, resolveWritableProjectPath } from "../src/project-path.ts";
+import {
+  resolveExistingProjectPath,
+  resolveWritableProjectPath,
+} from "../src/project-path.ts";
 import { withTempProject } from "./helpers/temp-project.ts";
 
 describe("project path resolver", () => {
@@ -21,7 +24,9 @@ describe("project path resolver", () => {
 
   it("rejects symlinks that point outside the current project", async () => {
     await withTempProject(async (projectRoot) => {
-      const outsideFile = await Deno.makeTempFile({ prefix: "ds-coding-agent-outside-" });
+      const outsideFile = await Deno.makeTempFile({
+        prefix: "ds-coding-agent-outside-",
+      });
       await Deno.writeTextFile(outsideFile, "secret\n");
       await Deno.symlink(outsideFile, join(projectRoot, "linked-secret.txt"));
 
@@ -45,10 +50,15 @@ describe("writable path resolver", () => {
       await Deno.mkdir("node_modules/pkg", { recursive: true });
       await Deno.writeTextFile("node_modules/pkg/index.ts", "");
 
-      await expect(resolveWritableProjectPath("index.ts")).resolves.toBeDefined();
-      await expect(resolveWritableProjectPath(".env")).rejects.toThrow(/File is not writable/);
-      await expect(resolveWritableProjectPath("pnpm-lock.yaml")).rejects.toThrow(/File is not writable/);
-      await expect(resolveWritableProjectPath("node_modules/pkg/index.ts")).rejects.toThrow(/Directory is not writable/);
+      await expect(resolveWritableProjectPath("index.ts")).resolves
+        .toBeDefined();
+      await expect(resolveWritableProjectPath(".env")).rejects.toThrow(
+        /File is not writable/,
+      );
+      await expect(resolveWritableProjectPath("pnpm-lock.yaml")).rejects
+        .toThrow(/File is not writable/);
+      await expect(resolveWritableProjectPath("node_modules/pkg/index.ts"))
+        .rejects.toThrow(/Directory is not writable/);
     });
   });
 });

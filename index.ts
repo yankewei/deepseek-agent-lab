@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { streamText, stepCountIs } from "ai";
+import { stepCountIs, streamText } from "ai";
 import { deepseek } from "@ai-sdk/deepseek";
 import {
   formatExecutionEvent,
