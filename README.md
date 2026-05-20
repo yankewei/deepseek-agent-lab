@@ -500,6 +500,9 @@ deno task test
 
 ## Learning Path
 
+For a map of the runtime modules and flows, read
+[`docs/runtime.md`](docs/runtime.md).
+
 This repo has been built step by step:
 
 1. Basic agent loop

@@ -161,7 +161,7 @@ coding agent 时的下一步清单。
       `docs/learning-path.md`，按 Basic Agent
       Loop、Tools、Policy、Approval、State、Events、Results 展开。
 
-- [ ] 给每个核心模块补架构说明。 可以写 `docs/runtime.md`，解释
+- [x] 给每个核心模块补架构说明。 已新增 `docs/runtime.md`，解释
       `policy.ts`、`command-executor.ts`、`execution-state.ts`、`approval.ts`、`agent-tool-result.ts`
       的关系。
 

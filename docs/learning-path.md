@@ -246,7 +246,7 @@ Use this order for future sessions:
 5. Add `gitStatus`. Done.
 6. Add an agent runtime workflow test. Done.
 7. Add delete patch approval. Done.
-8. Write a short architecture document for runtime flow.
+8. Write a short architecture document for runtime flow. Done.
 
 Each step is small, testable, and directly connected to a real coding-agent
 runtime concern.
