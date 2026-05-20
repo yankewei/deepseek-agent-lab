@@ -1,9 +1,32 @@
 import { describe, it } from "@std/testing/bdd";
 import { expect } from "@std/expect";
-import { applyPatch } from "../src/tools/apply-patch.ts";
+import { applyPatch, patchRequiresApproval } from "../src/tools/apply-patch.ts";
 import { withTempProject } from "./helpers/temp-project.ts";
 
 describe("applyPatch", () => {
+  it("requires approval for patches that delete files", () => {
+    expect(
+      patchRequiresApproval({
+        patch: `*** Begin Patch
+*** Delete File: old.txt
+*** End Patch`,
+      }),
+    ).toBe(true);
+  });
+
+  it("does not require approval for patches that only update files", () => {
+    expect(
+      patchRequiresApproval({
+        patch: `*** Begin Patch
+*** Update File: index.ts
+@@
+-const value = 1;
++const value = 2;
+*** End Patch`,
+      }),
+    ).toBe(false);
+  });
+
   it("can update an existing file", async () => {
     await withTempProject(async () => {
       await Deno.writeTextFile(

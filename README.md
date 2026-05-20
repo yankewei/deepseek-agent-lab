@@ -455,6 +455,10 @@ missing or ambiguous, nothing is written.
 When `dryRun` is `true`, the same parsing and safety checks still run, but the
 tool returns the preview result without creating, deleting, or modifying files.
 
+Delete patches require approval before they are applied. If approval is denied,
+the tool returns a skipped result and does not delete the file. Dry-run previews
+do not require approval because they do not write to disk.
+
 ## Tests
 
 The test suite covers the important safety behavior:
@@ -466,6 +470,7 @@ The test suite covers the important safety behavior:
 - blocked write paths
 - `editFile` behavior
 - `applyPatch` behavior, including dry-run previews
+- delete patch approval
 - `gitStatus` behavior
 - agent runtime workflow from read to patch to git inspection
 - command execution state tracking
@@ -502,6 +507,7 @@ This repo has been built step by step:
 16. `applyPatch` dry-run previews
 17. `gitStatus`
 18. Agent runtime workflow test
+19. Delete patch approval
 
 Good next topics:
 

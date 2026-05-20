@@ -1,7 +1,10 @@
 import { join } from "@std/path";
 import { describe, it } from "@std/testing/bdd";
 import { expect } from "@std/expect";
-import { applyPatchTool } from "../src/tools/apply-patch.ts";
+import {
+  applyPatchTool,
+  createApplyPatchTool,
+} from "../src/tools/apply-patch.ts";
 import { editFileTool } from "../src/tools/edit-file.ts";
 import { getDiffTool } from "../src/tools/get-diff.ts";
 import { createGitStatusTool } from "../src/tools/git-status.ts";
@@ -160,6 +163,107 @@ describe("tool AgentToolResult wrappers", () => {
           dryRun: false,
         },
       });
+    });
+  });
+
+  it("does not request approval for update-only patches", async () => {
+    await withTempProject(async () => {
+      await Deno.writeTextFile("index.ts", "const value = 1;\n");
+      const applyPatchTool = createApplyPatchTool({
+        prompt: async () => {
+          throw new Error("approval should not be requested");
+        },
+      });
+
+      const result = await applyPatchTool.execute?.(
+        {
+          patch: `*** Begin Patch
+*** Update File: index.ts
+@@
+-const value = 1;
++const value = 2;
+*** End Patch`,
+        },
+        toolExecutionOptions,
+      );
+
+      expect(result).toEqual({
+        ok: true,
+        data: {
+          changedFiles: ["index.ts"],
+          dryRun: false,
+        },
+      });
+      expect(await Deno.readTextFile("index.ts")).toBe("const value = 2;\n");
+    });
+  });
+
+  it("skips delete patches when approval is denied", async () => {
+    await withTempProject(async () => {
+      await Deno.writeTextFile("old.txt", "remove me\n");
+      const applyPatchTool = createApplyPatchTool({
+        prompt: async (request) => {
+          expect(request).toMatchObject({
+            action: "apply-patch",
+            title: "Apply patch requiring approval",
+            subject: "Delete file patch",
+            riskLevel: "medium",
+          });
+
+          return {
+            decision: "deny",
+            reason: "Not now.",
+          };
+        },
+      });
+
+      const result = await applyPatchTool.execute?.(
+        {
+          patch: `*** Begin Patch
+*** Delete File: old.txt
+*** End Patch`,
+        },
+        toolExecutionOptions,
+      );
+
+      expect(result).toEqual({
+        ok: true,
+        data: null,
+        meta: {
+          approvalRequired: true,
+          skipped: true,
+        },
+      });
+      expect(await Deno.readTextFile("old.txt")).toBe("remove me\n");
+    });
+  });
+
+  it("applies delete patches after approval", async () => {
+    await withTempProject(async () => {
+      await Deno.writeTextFile("old.txt", "remove me\n");
+      const applyPatchTool = createApplyPatchTool({
+        prompt: async () => ({ decision: "approve_once" }),
+      });
+
+      const result = await applyPatchTool.execute?.(
+        {
+          patch: `*** Begin Patch
+*** Delete File: old.txt
+*** End Patch`,
+        },
+        toolExecutionOptions,
+      );
+
+      expect(result).toEqual({
+        ok: true,
+        data: {
+          changedFiles: ["old.txt"],
+          dryRun: false,
+        },
+      });
+      await expect(Deno.readTextFile("old.txt")).rejects.toThrow(
+        /No such file/,
+      );
     });
   });
 

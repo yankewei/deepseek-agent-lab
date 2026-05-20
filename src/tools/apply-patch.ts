@@ -1,7 +1,12 @@
 import { tool } from "ai";
 
 import { z } from "zod";
-import { toAgentToolResult } from "../agent-tool-result.ts";
+import { type ApprovalPrompt, requestApproval } from "../approval.ts";
+import {
+  type AgentToolResult,
+  okAgentToolResult,
+  toAgentToolResult,
+} from "../agent-tool-result.ts";
 import {
   executeToolWithState,
   type ExecutionTracker,
@@ -212,6 +217,12 @@ function parseLinePatch(patch: string): PatchOperation[] {
   return operations;
 }
 
+export function patchRequiresApproval(input: { patch: string }) {
+  const operations = parseLinePatch(input.patch);
+
+  return operations.some((operation) => operation.type === "delete");
+}
+
 async function preparePatchOperations(
   operations: PatchOperation[],
 ): Promise<PreparedOperation[]> {
@@ -310,7 +321,7 @@ export async function applyPatch(input: { patch: string; dryRun?: boolean }) {
 }
 
 export function createApplyPatchTool(
-  options?: { executionTracker?: ExecutionTracker },
+  options?: { executionTracker?: ExecutionTracker; prompt?: ApprovalPrompt },
 ) {
   return tool({
     description: "Apply a safe multi-file patch inside the current project",
@@ -320,7 +331,32 @@ export function createApplyPatchTool(
       dryRun: z.boolean().optional(),
     }),
 
-    execute: async ({ patch, dryRun }) => {
+    execute: async ({ patch, dryRun }): Promise<
+      AgentToolResult<Awaited<ReturnType<typeof applyPatch>> | null>
+    > => {
+      if (!dryRun && patchRequiresApproval({ patch })) {
+        const approval = await requestApproval(
+          {
+            action: "apply-patch",
+            title: "Apply patch requiring approval",
+            subject: "Delete file patch",
+            riskLevel: "medium",
+            policyReason: "Patch deletes one or more files.",
+            details: {
+              Patch: patch,
+            },
+          },
+          options?.prompt,
+        );
+
+        if (approval.decision === "deny") {
+          return okAgentToolResult(null, {
+            approvalRequired: true,
+            skipped: true,
+          });
+        }
+      }
+
       return await toAgentToolResult(async () =>
         await executeToolWithState({
           toolName: "applyPatch",

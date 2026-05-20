@@ -194,6 +194,7 @@ Editing tools are where agent power becomes risky. Good editing tools need:
 - blocked sensitive paths
 - exact replacements or validated patches
 - dry-run previews before write operations
+- approval for risky write operations
 - useful failure messages
 - tests for path escapes and generated files
 
@@ -203,11 +204,14 @@ Completed practice task:
 - Dry-run mode returns `changedFiles` with `dryRun: true`.
 - Dry-run mode still validates paths and update hunks.
 - Dry-run mode does not create, delete, or modify files.
+- Delete patches request approval before writing.
+- Denied delete patches return a skipped result without deleting files.
 
 Next practice task:
 
 - Return operation types such as add, update, and delete in the preview result.
-- Keep path and hunk validation in the preparation phase before any write.
+- Extend approval beyond delete patches to larger patches or sensitive file
+  types.
 
 ## 9. Git Workflow
 
@@ -239,7 +243,7 @@ Use this order for future sessions:
 4. Add `applyPatch` dry-run mode. Done.
 5. Add `gitStatus`. Done.
 6. Add an agent runtime workflow test. Done.
-7. Add file write approval.
+7. Add delete patch approval. Done.
 8. Write a short architecture document for runtime flow.
 
 Each step is small, testable, and directly connected to a real coding-agent
