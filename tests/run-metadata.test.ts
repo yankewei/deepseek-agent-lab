@@ -7,6 +7,8 @@ import {
   getExecutionHistoryPath,
   getRunDirectory,
   getRunMetadataPath,
+  getToolCallsPath,
+  getToolResultsPath,
   readRunMetadata,
   updateRunStatus,
   writeInitialRunMetadata,
@@ -42,6 +44,12 @@ describe("run metadata", () => {
     );
     expect(getExecutionHistoryPath({ runId: "run_1" })).toBe(
       ".disco/runs/run_1/execution-events.jsonl",
+    );
+    expect(getToolCallsPath({ runId: "run_1" })).toBe(
+      ".disco/runs/run_1/tool-calls.jsonl",
+    );
+    expect(getToolResultsPath({ runId: "run_1" })).toBe(
+      ".disco/runs/run_1/tool-results.jsonl",
     );
   });
 

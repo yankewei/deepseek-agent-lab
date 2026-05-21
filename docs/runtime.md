@@ -35,6 +35,9 @@ a narrow capability.
 | [`src/command-executor.ts`](../src/command-executor.ts)   | Applies command policy, approval, execution, and command state tracking.     |
 | [`src/approval.ts`](../src/approval.ts)                   | Defines structured approval requests and prompt handling.                    |
 | [`src/execution-state.ts`](../src/execution-state.ts)     | Records what happened and emits execution state events.                      |
+| [`src/execution-history.ts`](../src/execution-history.ts) | Persists execution state events as JSONL.                                    |
+| [`src/run-metadata.ts`](../src/run-metadata.ts)           | Builds run ids, run paths, and `run.json` metadata.                          |
+| [`src/tool-history.ts`](../src/tool-history.ts)           | Persists tool calls and results and queries completed write tool calls.      |
 | [`src/agent-tool-result.ts`](../src/agent-tool-result.ts) | Wraps tool output in a consistent `{ ok, data, error, meta }` envelope.      |
 | [`src/errors.ts`](../src/errors.ts)                       | Converts thrown errors into stable agent error codes.                        |
 | [`src/cli-output.ts`](../src/cli-output.ts)               | Formats stream events and debug output for the CLI.                          |
@@ -275,6 +278,8 @@ Each persisted run uses one directory:
 .disco/runs/<runId>/
   run.json
   execution-events.jsonl
+  tool-calls.jsonl
+  tool-results.jsonl
 ```
 
 `run.json` uses this shape:
@@ -319,6 +324,79 @@ The integration workflow test now proves one run id can produce both `run.json`
 and `execution-events.jsonl`. The CLI entrypoint still does not write run
 metadata itself; that is a future wiring step once the CLI run lifecycle is
 formalized.
+
+## Tool Call History
+
+Tool call history lives in [`src/tool-history.ts`](../src/tool-history.ts).
+
+Execution history answers what actually happened. Tool call history answers what
+the model asked for and what result was returned to the model.
+
+Tool calls are stored in:
+
+```text
+.disco/runs/<runId>/tool-calls.jsonl
+```
+
+Each line uses this shape:
+
+```ts
+{
+  type: "tool_call";
+  toolCallId: string;
+  toolName: string;
+  input: unknown;
+  timestamp: string;
+}
+```
+
+Tool results are stored in:
+
+```text
+.disco/runs/<runId>/tool-results.jsonl
+```
+
+Each line uses this shape:
+
+```ts
+{
+  type: "tool_result";
+  toolCallId: string;
+  toolName: string;
+  output: unknown;
+  timestamp: string;
+  executionId?: string;
+}
+```
+
+`toolCallId` connects a result to the original model tool call. `executionId`
+connects a result to an execution record in `execution-events.jsonl` when the
+tool was tracked by the execution tracker.
+
+`findCompletedWriteToolCalls` joins three inputs:
+
+- persisted tool calls
+- persisted tool results
+- persisted execution events
+
+It returns only write tool calls whose result has an `executionId` and whose
+execution record completed. This is the first resume-oriented query that can
+answer:
+
+```text
+Which write tools already completed and should not be blindly repeated?
+```
+
+Current write tools are `applyPatch` and `editFile`. The helper accepts a custom
+write tool name list so future tools can opt in without changing the query
+logic.
+
+Current coverage proves:
+
+- tool call and result records can be written and read as JSONL
+- a workflow can persist tool calls and results beside execution history
+- an `applyPatch` result can be correlated to a completed execution record
+- failed or incomplete executions are not treated as completed write tool calls
 
 ## Result Envelope
 

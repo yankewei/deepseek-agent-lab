@@ -58,6 +58,20 @@ export function getExecutionHistoryPath(input: {
   return join(getRunDirectory(input), "execution-events.jsonl");
 }
 
+export function getToolCallsPath(input: {
+  runId: string;
+  rootDir?: string;
+}) {
+  return join(getRunDirectory(input), "tool-calls.jsonl");
+}
+
+export function getToolResultsPath(input: {
+  runId: string;
+  rootDir?: string;
+}) {
+  return join(getRunDirectory(input), "tool-results.jsonl");
+}
+
 export function createInitialRunMetadata(input: {
   runId: string;
   cwd: string;

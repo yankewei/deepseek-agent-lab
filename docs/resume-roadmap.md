@@ -747,7 +747,7 @@ Implemented:
 
 ### Phase 3: Persist Tool Calls And Tool Results
 
-Status: not started
+Status: done
 
 Persist the model's tool calls and the tool outputs returned to the model.
 
@@ -762,6 +762,182 @@ Done when:
 
 - completed write tools can be identified after process restart
 - resume logic can avoid re-running completed tool calls
+
+#### Phase 3 Work Breakdown
+
+The goal of this phase is to persist what the model asked tools to do and what
+results were returned. Execution events show state transitions, but tool call
+history is the layer that lets resume avoid repeating completed tool work.
+
+##### Step 1. Define Persisted Tool Call Schema
+
+Status: done
+
+Output:
+
+- Add a stable schema for records in `tool-calls.jsonl`.
+- Include enough data to replay or inspect the model's requested tool call.
+
+Schema:
+
+```ts
+export type PersistedToolCall = {
+  type: "tool_call";
+  toolCallId: string;
+  toolName: string;
+  input: unknown;
+  timestamp: string;
+};
+```
+
+Done when:
+
+- The type exists in code.
+- Tests can create a deterministic persisted tool call record.
+
+Implemented:
+
+- Added `PersistedToolCall` in `src/tool-history.ts`.
+- Added `createPersistedToolCall`.
+- Added tests for the persisted tool call shape and deterministic timestamp.
+
+##### Step 2. Define Persisted Tool Result Schema
+
+Status: done
+
+Output:
+
+- Add a stable schema for records in `tool-results.jsonl`.
+- Include `toolCallId`, `toolName`, `output`, `timestamp`, and optional
+  `executionId`.
+
+Done when:
+
+- The type exists in code.
+- Tests can create a deterministic persisted tool result record.
+
+Implemented:
+
+- Added `PersistedToolResult` in `src/tool-history.ts`.
+- Added `createPersistedToolResult`.
+- `executionId` is optional and omitted when unavailable.
+- Added tests for result records with and without `executionId`.
+
+##### Step 3. Implement JSONL Writer And Reader
+
+Status: done
+
+Output:
+
+- Add append helpers for tool calls and tool results.
+- Add read-back helpers for both JSONL files.
+
+Done when:
+
+- Tests can write and read `tool-calls.jsonl`.
+- Tests can write and read `tool-results.jsonl`.
+
+Implemented:
+
+- Added `getToolCallsPath` and `getToolResultsPath`.
+- Added `appendPersistedToolCall` and `appendPersistedToolResult`.
+- Added `readPersistedToolCalls` and `readPersistedToolResults`.
+- Empty JSONL lines are ignored on read-back.
+- Tests cover writing and reading both `tool-calls.jsonl` and
+  `tool-results.jsonl`.
+
+##### Step 4. Persist Tool Calls And Results In A Workflow Test
+
+Status: done
+
+Output:
+
+- Extend an integration workflow to persist one tool call and one result.
+- Keep runtime wiring explicit and test-local first.
+
+Done when:
+
+- A test produces `tool-calls.jsonl`.
+- A test produces `tool-results.jsonl`.
+- Records share the same `toolCallId`.
+
+Implemented:
+
+- Updated the agent runtime workflow test to persist a `readFile` tool call.
+- The same workflow persists the corresponding `readFile` tool result.
+- The test verifies `tool-calls.jsonl` and `tool-results.jsonl` share
+  `toolCallId`.
+- This step intentionally keeps persistence explicit inside the test. Runtime
+  helper extraction can happen after the behavior is proven.
+
+##### Step 5. Correlate Tool Results To Execution Records
+
+Status: done
+
+Output:
+
+- Ensure persisted tool results can include the `executionId` returned in tool
+  result metadata.
+
+Done when:
+
+- A completed write tool result can be tied to an execution event record.
+
+Implemented:
+
+- Extended the approval-path `applyPatch` workflow test to persist the
+  `applyPatch` tool call and result.
+- Persisted the result with the `executionId` returned in tool result metadata.
+- Verified the persisted result's `executionId` points to a completed
+  `applyPatch` execution record in `execution-events.jsonl`.
+- This proves resume can connect "what was returned to the model" with "what
+  actually executed" for a write tool.
+
+##### Step 6. Identify Completed Write Tool Calls
+
+Status: done
+
+Output:
+
+- Add a test helper or query that finds completed write tools from persisted
+  results.
+
+Done when:
+
+- A test can identify a completed `applyPatch` call after reading JSONL.
+
+Implemented:
+
+- Added `CompletedWriteToolCall` in `src/tool-history.ts`.
+- Added `findCompletedWriteToolCalls`.
+- The query joins persisted tool calls, persisted tool results, and execution
+  events by `toolCallId` and `executionId`.
+- It only returns write tools with a matching completed execution record.
+- Added tests proving a completed `applyPatch` can be identified after reading
+  JSONL and failed/incomplete executions are ignored.
+
+##### Step 7. Document Phase 3 Behavior
+
+Status: done
+
+Output:
+
+- Update runtime docs with tool call and result persistence behavior.
+- Update this roadmap with completed implementation details.
+
+Done when:
+
+- Phase 3 can move to `done`.
+- Later resume snapshot work can depend on persisted tool call history.
+
+Implemented:
+
+- Updated `docs/runtime.md` with the Phase 3 storage files and schemas.
+- Documented how `toolCallId` links calls to results.
+- Documented how `executionId` links tool results to execution records.
+- Documented `findCompletedWriteToolCalls` as the resume-oriented query for
+  completed write tools.
+- Moved Phase 3 status to `done`.
 
 ### Phase 4: Persist Approval Requests
 

@@ -11,10 +11,20 @@ import {
 import {
   createInitialRunMetadata,
   getExecutionHistoryPath,
+  getToolCallsPath,
+  getToolResultsPath,
   readRunMetadata,
   updateRunStatus,
   writeInitialRunMetadata,
 } from "../src/run-metadata.ts";
+import {
+  appendPersistedToolCall,
+  appendPersistedToolResult,
+  createPersistedToolCall,
+  createPersistedToolResult,
+  readPersistedToolCalls,
+  readPersistedToolResults,
+} from "../src/tool-history.ts";
 import type { AgentToolResult } from "../src/agent-tool-result.ts";
 import { createTools } from "../src/tools/index.ts";
 import { createApplyPatchTool } from "../src/tools/apply-patch.ts";
@@ -71,6 +81,8 @@ describe("agent runtime workflow", () => {
 
       const events: ExecutionEvent[] = [];
       const historyFilePath = getExecutionHistoryPath({ runId });
+      const toolCallsPath = getToolCallsPath({ runId });
+      const toolResultsPath = getToolResultsPath({ runId });
       const executionTracker = createExecutionTracker({
         createId: () => `exec_${events.length + 1}`,
         historySink: createJsonlExecutionHistorySink({
@@ -82,10 +94,29 @@ describe("agent runtime workflow", () => {
       });
       const tools = createTools({ executionTracker });
 
+      const readFileCallInput = { path: "index.ts" };
+      appendPersistedToolCall({
+        filePath: toolCallsPath,
+        record: createPersistedToolCall({
+          toolCallId: "call_read_file",
+          toolName: "readFile",
+          input: readFileCallInput,
+          now: () => new Date("2026-01-02T03:04:06.000Z"),
+        }),
+      });
       const readResult = await tools.readFile.execute?.(
-        { path: "index.ts" },
-        toolExecutionOptions,
+        readFileCallInput,
+        { ...toolExecutionOptions, toolCallId: "call_read_file" },
       );
+      appendPersistedToolResult({
+        filePath: toolResultsPath,
+        record: createPersistedToolResult({
+          toolCallId: "call_read_file",
+          toolName: "readFile",
+          output: readResult,
+          now: () => new Date("2026-01-02T03:04:07.000Z"),
+        }),
+      });
 
       expect(readResult).toEqual({
         ok: true,
@@ -194,6 +225,35 @@ describe("agent runtime workflow", () => {
         "gitStatus",
         "getDiff",
       ]);
+      expect(readPersistedToolCalls({
+        text: await Deno.readTextFile(toolCallsPath),
+      })).toEqual([
+        {
+          type: "tool_call",
+          toolCallId: "call_read_file",
+          toolName: "readFile",
+          input: {
+            path: "index.ts",
+          },
+          timestamp: "2026-01-02T03:04:06.000Z",
+        },
+      ]);
+      expect(readPersistedToolResults({
+        text: await Deno.readTextFile(toolResultsPath),
+      })).toEqual([
+        {
+          type: "tool_result",
+          toolCallId: "call_read_file",
+          toolName: "readFile",
+          output: {
+            ok: true,
+            data: {
+              content: "const name = 'agent';\nconsole.log(name);\n",
+            },
+          },
+          timestamp: "2026-01-02T03:04:07.000Z",
+        },
+      ]);
 
       updateRunStatus({
         runId,
@@ -213,10 +273,11 @@ describe("agent runtime workflow", () => {
     await withTempProject(async () => {
       await Deno.writeTextFile("old.txt", "remove me\n");
 
+      const runId = "run_approval";
       const events: ExecutionEvent[] = [];
-      const historyFilePath = getExecutionHistoryPath({
-        runId: "run_approval",
-      });
+      const historyFilePath = getExecutionHistoryPath({ runId });
+      const toolCallsPath = getToolCallsPath({ runId });
+      const toolResultsPath = getToolResultsPath({ runId });
       const executionTracker = createExecutionTracker({
         createId: () => `exec_${events.length + 1}`,
         historySink: createJsonlExecutionHistorySink({
@@ -230,14 +291,29 @@ describe("agent runtime workflow", () => {
         executionTracker,
         prompt: async () => ({ decision: "approve_once" }),
       });
-
-      const result = await applyPatchTool.execute?.(
-        {
-          patch: `*** Begin Patch
+      const deletePatch = `*** Begin Patch
 *** Delete File: old.txt
-*** End Patch`,
-        },
-        toolExecutionOptions,
+*** End Patch`;
+
+      appendPersistedToolCall({
+        filePath: toolCallsPath,
+        record: createPersistedToolCall({
+          toolCallId: "call_delete_patch",
+          toolName: "applyPatch",
+          input: {
+            patch: deletePatch,
+          },
+          now: () => new Date("2026-01-02T03:04:08.000Z"),
+        }),
+      });
+
+      const result = asToolResult(
+        await applyPatchTool.execute?.(
+          {
+            patch: deletePatch,
+          },
+          { ...toolExecutionOptions, toolCallId: "call_delete_patch" },
+        ),
       );
 
       expect(result).toMatchObject({
@@ -250,6 +326,21 @@ describe("agent runtime workflow", () => {
           approvalRequired: true,
           executionId: "exec_1",
         },
+      });
+
+      if (!result?.ok) {
+        throw new Error("applyPatch should succeed");
+      }
+
+      appendPersistedToolResult({
+        filePath: toolResultsPath,
+        record: createPersistedToolResult({
+          toolCallId: "call_delete_patch",
+          toolName: "applyPatch",
+          output: result,
+          executionId: result.meta?.executionId,
+          now: () => new Date("2026-01-02T03:04:09.000Z"),
+        }),
       });
 
       const persistedEvents = readJsonlExecutionHistoryEvents({
@@ -277,6 +368,51 @@ describe("agent runtime workflow", () => {
         4,
         5,
       ]);
+
+      expect(readPersistedToolCalls({
+        text: await Deno.readTextFile(toolCallsPath),
+      })).toEqual([
+        {
+          type: "tool_call",
+          toolCallId: "call_delete_patch",
+          toolName: "applyPatch",
+          input: {
+            patch: deletePatch,
+          },
+          timestamp: "2026-01-02T03:04:08.000Z",
+        },
+      ]);
+
+      const persistedToolResults = readPersistedToolResults({
+        text: await Deno.readTextFile(toolResultsPath),
+      });
+      expect(persistedToolResults).toEqual([
+        {
+          type: "tool_result",
+          toolCallId: "call_delete_patch",
+          toolName: "applyPatch",
+          output: {
+            ok: true,
+            data: {
+              changedFiles: ["old.txt"],
+              dryRun: false,
+            },
+            meta: {
+              approvalRequired: true,
+              executionId: "exec_1",
+            },
+          },
+          executionId: "exec_1",
+          timestamp: "2026-01-02T03:04:09.000Z",
+        },
+      ]);
+      expect(
+        persistedEvents.some((event) =>
+          event.record.id === persistedToolResults[0].executionId &&
+          event.record.toolName === "applyPatch" &&
+          event.record.status === "completed"
+        ),
+      ).toBe(true);
     });
   });
 });
