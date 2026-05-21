@@ -5,6 +5,8 @@ import {
   createExecutionTracker,
   executeToolWithState,
   type ExecutionEvent,
+  type ExecutionHistoryEvent,
+  type ExecutionHistorySink,
   type ExecutionTracker,
 } from "../src/execution-state.ts";
 
@@ -29,6 +31,17 @@ function createTestTrackerWithEvents(events: ExecutionEvent[]) {
       events.push(event);
     },
   });
+}
+
+function createMemoryExecutionHistorySink(): ExecutionHistorySink & {
+  events: ExecutionHistoryEvent[];
+} {
+  return {
+    events: [],
+    append(event) {
+      this.events.push(event);
+    },
+  };
 }
 
 function recordStatuses(tracker: ExecutionTracker) {
@@ -225,6 +238,61 @@ describe("execution state tracking", () => {
     expect(events.map((event) => event.sequence)).toEqual([1, 2, 3, 4]);
   });
 
+  it("can collect execution events through a memory history sink", async () => {
+    const historySink = createMemoryExecutionHistorySink();
+    let id = 0;
+    let timestamp = 0;
+
+    const tracker = createExecutionTracker({
+      createId: () => `exec_${++id}`,
+      historySink,
+      now: () => new Date(Date.UTC(2026, 0, 1, 0, 0, timestamp++)),
+    });
+
+    await executeToolWithState({
+      toolName: "listFiles",
+      tracker,
+      run: async () => ({ files: ["index.ts"] }),
+    });
+
+    expect(historySink.events.map((event) => event.record.status)).toEqual([
+      "created",
+      "running",
+      "completed",
+    ]);
+    expect(historySink.events.map((event) => event.sequence)).toEqual([
+      1,
+      2,
+      3,
+    ]);
+    expect(historySink.events.map((event) => event.timestamp)).toEqual([
+      "2026-01-01T00:00:00.000Z",
+      "2026-01-01T00:00:01.000Z",
+      "2026-01-01T00:00:02.000Z",
+    ]);
+    expect(historySink.events.at(-1)?.record).toMatchObject({
+      id: "exec_1",
+      kind: "tool",
+      toolName: "listFiles",
+      status: "completed",
+    });
+  });
+
+  it("fails the current operation when the history sink fails", () => {
+    const tracker = createExecutionTracker({
+      createId: () => "exec_1",
+      historySink: {
+        append() {
+          throw new Error("history unavailable");
+        },
+      },
+    });
+
+    expect(() => tracker.createRecord({ command: "deno task test" })).toThrow(
+      /history unavailable/,
+    );
+  });
+
   it("assigns increasing event sequence numbers across records", () => {
     const events: ExecutionEvent[] = [];
     const tracker = createTestTrackerWithEvents(events);
@@ -247,6 +315,53 @@ describe("execution state tracking", () => {
     ]);
   });
 
+  it("emits history events with a stable persisted schema", async () => {
+    const historySink = createMemoryExecutionHistorySink();
+    let id = 0;
+    let timestamp = 0;
+
+    const tracker = createExecutionTracker({
+      createId: () => `exec_${++id}`,
+      historySink,
+      now: () => new Date(Date.UTC(2026, 0, 1, 0, 0, timestamp++)),
+    });
+
+    await executeToolWithState({
+      toolName: "listFiles",
+      tracker,
+      run: async () => ({ files: ["index.ts"] }),
+    });
+
+    expect(historySink.events.at(-1)).toEqual({
+      type: "execution_state_changed",
+      sequence: 3,
+      timestamp: "2026-01-01T00:00:02.000Z",
+      record: {
+        id: "exec_1",
+        kind: "tool",
+        toolName: "listFiles",
+        status: "completed",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        completedAt: "2026-01-01T00:00:02.000Z",
+        durationMs: 2000,
+        history: [
+          {
+            status: "created",
+            at: "2026-01-01T00:00:00.000Z",
+          },
+          {
+            status: "running",
+            at: "2026-01-01T00:00:01.000Z",
+          },
+          {
+            status: "completed",
+            at: "2026-01-01T00:00:02.000Z",
+          },
+        ],
+      },
+    });
+  });
+
   it("emits cloned records so event subscribers cannot mutate tracker state", () => {
     const events: ExecutionEvent[] = [];
     const tracker = createTestTrackerWithEvents(events);
@@ -261,6 +376,27 @@ describe("execution state tracking", () => {
     expect(tracker.getRecord(record.id)).toMatchObject({
       status: "created",
       history: [{ status: "created" }],
+    });
+  });
+
+  it("emits separate cloned records for the history sink and event subscriber", () => {
+    const historySink = createMemoryExecutionHistorySink();
+    const events: ExecutionEvent[] = [];
+    const tracker = createExecutionTracker({
+      createId: () => "exec_1",
+      historySink,
+      onEvent: (event) => {
+        event.record.status = "failed";
+        events.push(event);
+      },
+    });
+
+    tracker.createRecord({ command: "deno task test" });
+
+    expect(historySink.events[0].record.status).toBe("created");
+    expect(events[0].record.status).toBe("failed");
+    expect(tracker.getRecord("exec_1")).toMatchObject({
+      status: "created",
     });
   });
 

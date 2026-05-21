@@ -153,7 +153,7 @@ This prevents blindly restarting from the beginning.
 Use one run directory per agent run:
 
 ```text
-.agent/
+.disco/
   runs/
     <runId>/
       run.json
@@ -167,14 +167,14 @@ Use one run directory per agent run:
 The first phase only needs:
 
 ```text
-.agent/runs/<runId>/execution-events.jsonl
+.disco/runs/<runId>/execution-events.jsonl
 ```
 
 ## Phases
 
 ### Phase 1: Persistent Execution Event History
 
-Status: not started
+Status: done
 
 Persist every `execution_state_changed` event to JSONL.
 
@@ -182,7 +182,7 @@ Build:
 
 - `ExecutionHistorySink` type
 - optional `historySink` on `createExecutionTracker`
-- JSONL sink writing to `.agent/runs/<runId>/execution-events.jsonl`
+- JSONL sink writing to `.disco/runs/<runId>/execution-events.jsonl`
 - tests proving state changes are appended
 
 Done when:
@@ -197,6 +197,315 @@ Why this comes first:
 Execution events are the factual base for resume. They show what actually
 happened, even before we can resume model conversation state.
 
+#### Phase 1 Work Breakdown
+
+The goal of this phase is not to make resume work yet. The goal is only to
+create a durable event log that later phases can read.
+
+##### Step 1. Locate The Current Execution Tracker
+
+Status: done
+
+Output:
+
+- Identify where execution records are created and updated.
+- Identify the current event shape emitted by the tracker.
+- Identify which tests already cover execution state transitions.
+
+Done when:
+
+- We know the exact files to change.
+- We can explain the current in-memory flow before adding persistence.
+
+Findings:
+
+- `src/execution-state.ts` owns `ExecutionRecord`, `ExecutionEvent`,
+  `ExecutionTracker`, `createExecutionTracker`, and `executeToolWithState`.
+- `createExecutionTracker` currently accepts `onEvent`, keeps records in memory,
+  assigns increasing `sequence` values, clones records before emitting, and
+  emits one `execution_state_changed` event per create or update.
+- Command execution state changes are produced by `executeCommandWithPolicy` in
+  `src/command-executor.ts`.
+- Generic tool execution state changes are produced by `executeToolWithState`
+  and used by the regular tools.
+- `applyPatch` has a manual approval path for delete patches, so it directly
+  creates and updates the execution record before applying or skipping the
+  patch.
+- `index.ts` wires `createExecutionTracker` with `onEvent` only for debug CLI
+  output. No persistent sink exists yet.
+
+Current event shape:
+
+```ts
+{
+  type: "execution_state_changed";
+  sequence: number;
+  record: ExecutionRecord;
+}
+```
+
+Existing coverage:
+
+- `tests/execution-state.test.ts` covers command execution state transitions,
+  generic tool transitions, event sequence numbers, and cloned event records.
+- `tests/tool-execution-state.test.ts` covers every tool wrapper, including
+  `applyPatch` approval transitions.
+- `tests/agent-loop.e2e.test.ts` covers a small workflow through real tools and
+  checks completed tool events.
+
+Implementation implication:
+
+- Step 2 should add the sink at the tracker boundary, next to `onEvent`. That
+  keeps persistence centralized and avoids duplicating history writes inside
+  each tool.
+
+##### Step 2. Define `ExecutionHistorySink`
+
+Status: done
+
+Output:
+
+- Add a small interface for receiving execution events.
+- Keep it independent from JSONL and filesystem details.
+
+Example shape:
+
+```ts
+export interface ExecutionHistorySink {
+  append(event: ExecutionHistoryEvent): void;
+}
+```
+
+Done when:
+
+- The tracker can depend on the interface without knowing where events go.
+- Existing behavior stays unchanged when no sink is provided.
+
+Implemented:
+
+- Added `ExecutionHistoryEvent` as the event type consumed by history sinks.
+- Added `ExecutionHistorySink` with one method: `append(event)`.
+- Kept the interface free of JSONL, file paths, run ids, and filesystem
+  behavior.
+- Did not wire the sink into `createExecutionTracker` yet. That belongs to Step
+  4, after Step 3 proves the contract with a test-only memory sink.
+
+##### Step 3. Add A Test-Only Memory Sink
+
+Status: done
+
+Output:
+
+- Add a small in-memory sink inside tests.
+- Use it to prove the tracker sends events to the sink.
+
+Done when:
+
+- A test sees `created`, `running`, and `completed` events through the sink.
+- No filesystem writes exist yet.
+
+Implemented:
+
+- Added a test-only memory sink in `tests/execution-state.test.ts`.
+- The sink implements `ExecutionHistorySink` and stores `ExecutionHistoryEvent`
+  objects in an array.
+- Added coverage proving tracker events can flow into the sink and preserve
+  status order, sequence order, and execution record details.
+- Step 4 later connected this sink through first-class `historySink` wiring on
+  `createExecutionTracker`.
+
+##### Step 4. Connect The Sink To `createExecutionTracker`
+
+Status: done
+
+Output:
+
+- Add an optional `historySink` option.
+- Call `historySink.append(...)` whenever execution state changes.
+- Decide how sink write failures behave.
+
+Recommended first behavior:
+
+- If the sink fails, fail the current operation.
+
+Reason:
+
+- Resume depends on trustworthy history. Silent history loss makes later resume
+  unsafe.
+
+Done when:
+
+- Existing tests still pass without a sink.
+- New tests pass with a memory sink.
+
+Implemented:
+
+- Added optional `historySink` to `createExecutionTracker`.
+- `emit` now sends every execution event to `historySink.append(...)` and then
+  to the existing `onEvent` subscriber.
+- Each consumer receives its own cloned event so one consumer cannot mutate the
+  event observed by another consumer.
+- Tightened `ExecutionHistorySink.append` to synchronous `void` because
+  `createRecord` and `updateRecord` are synchronous. This lets sink failures
+  fail the current operation immediately instead of becoming detached async
+  failures.
+- Added tests proving direct `historySink` collection, sink failure behavior,
+  and separate cloned events for sink and `onEvent`.
+
+##### Step 5. Define The Persisted Event Schema
+
+Status: done
+
+Output:
+
+- Create a stable JSON shape for persisted execution events.
+- Include enough data to rebuild the latest execution state later.
+
+Example fields:
+
+```ts
+{
+  sequence: number;
+  timestamp: string;
+  type: "execution_state_changed";
+  record: ExecutionRecord;
+}
+```
+
+Done when:
+
+- The schema is explicit in code.
+- Tests assert valid event structure, not only event count.
+
+Implemented:
+
+- Added a top-level `timestamp` to execution events.
+- Made `ExecutionHistoryEvent` explicit instead of relying on a bare alias.
+- The persisted event schema is:
+
+```ts
+{
+  type: "execution_state_changed";
+  sequence: number;
+  timestamp: string;
+  record: ExecutionRecord;
+}
+```
+
+- The event timestamp comes from the latest `ExecutionRecord.history` entry, so
+  it represents the exact state transition being emitted.
+- Added tests that assert the full persisted event shape, including `timestamp`,
+  `sequence`, and the execution record needed for later snapshot rebuilding.
+
+##### Step 6. Implement A JSONL History Sink
+
+Status: done
+
+Output:
+
+- Add a filesystem-backed sink.
+- Append one JSON object per line.
+- Create parent directories when needed.
+
+Target path:
+
+```text
+.disco/runs/<runId>/execution-events.jsonl
+```
+
+Done when:
+
+- A test can write multiple events.
+- The file contains valid JSONL.
+- Events are appended in order.
+
+Implemented:
+
+- Added `createJsonlExecutionHistorySink` in `src/execution-history.ts`.
+- The sink writes one `ExecutionHistoryEvent` per line.
+- The sink creates parent directories before appending.
+- The sink uses synchronous filesystem writes because `ExecutionHistorySink` is
+  a synchronous failure boundary.
+- Added test coverage proving events are appended to
+  `.disco/runs/<runId>/execution-events.jsonl` in sequence order and can be
+  parsed as valid JSONL.
+
+##### Step 7. Add Read-Back Test Coverage
+
+Status: done
+
+Output:
+
+- Add a test helper that reads JSONL back into objects.
+- Prove persisted records can be parsed after writing.
+
+Done when:
+
+- The test reads the file line by line.
+- Every line parses as JSON.
+- The parsed event sequence matches the emitted sequence.
+
+Implemented:
+
+- Added `readJsonlExecutionHistoryEvents` in `src/execution-history.ts`.
+- The helper parses JSONL text into `ExecutionHistoryEvent[]`.
+- Empty lines are ignored so files with trailing newlines parse cleanly.
+- The JSONL sink test now reads persisted history through the shared helper.
+- Added direct read-back tests for multiple JSONL lines and empty history text.
+
+##### Step 8. Wire The JSONL Sink Into One Runtime Path
+
+Status: done
+
+Output:
+
+- Use the JSONL sink in a real or integration-style agent workflow test.
+- Keep the runtime wiring minimal.
+
+Done when:
+
+- Running an agent workflow creates `execution-events.jsonl`.
+- The file includes tool execution events.
+- Approval-related state changes are included when the workflow triggers
+  approval.
+
+Implemented:
+
+- Wired `createJsonlExecutionHistorySink` into `tests/agent-loop.e2e.test.ts`.
+- The existing read / dry-run patch / apply patch / git status / git diff
+  workflow now persists tool execution events to
+  `.disco/runs/run_1/execution-events.jsonl`.
+- Added an approval-path workflow for delete patches.
+- The approval workflow verifies persisted `applyPatch` state changes:
+  `created`, `waiting_for_approval`, `approved`, `running`, and `completed`.
+- CLI runtime wiring is still intentionally deferred until run id and run
+  directory metadata exist in Phase 2.
+
+##### Step 9. Document The Behavior
+
+Status: done
+
+Output:
+
+- Update this roadmap with what was implemented.
+- Add any important behavior to the runtime documentation.
+
+Done when:
+
+- Phase 1 status can move from `not started` to `done`.
+- Future phases can depend on the event history contract.
+
+Implemented:
+
+- Updated Phase 1 status to `done`.
+- Documented execution history persistence in `docs/runtime.md`.
+- Future phases can depend on:
+  - `ExecutionHistorySink`
+  - `ExecutionHistoryEvent`
+  - `createJsonlExecutionHistorySink`
+  - `readJsonlExecutionHistoryEvents`
+  - `.disco/runs/<runId>/execution-events.jsonl`
+
 ### Phase 2: Run Directory And Run Metadata
 
 Status: not started
@@ -206,7 +515,7 @@ Create a stable run directory and metadata file.
 Build:
 
 - run id generation
-- `.agent/runs/<runId>/run.json`
+- `.disco/runs/<runId>/run.json`
 - run status lifecycle
 - CLI debug output showing run id
 
@@ -328,7 +637,7 @@ Then add the JSONL sink after the interface is stable.
 ## Open Design Questions
 
 - Should failed history writes fail the agent run or only warn?
-- Should `.agent/` be gitignored?
+- Should `.disco/` be gitignored?
 - Should run ids be UUIDs or timestamp-based?
 - How much model message history is needed for useful resume?
 - Should pending approval be resumed automatically or always re-confirmed?

@@ -1,11 +1,16 @@
 import { describe, it } from "@std/testing/bdd";
 import { expect } from "@std/expect";
 import {
+  createJsonlExecutionHistorySink,
+  readJsonlExecutionHistoryEvents,
+} from "../src/execution-history.ts";
+import {
   createExecutionTracker,
   type ExecutionEvent,
 } from "../src/execution-state.ts";
 import type { AgentToolResult } from "../src/agent-tool-result.ts";
 import { createTools } from "../src/tools/index.ts";
+import { createApplyPatchTool } from "../src/tools/apply-patch.ts";
 import { withTempProject } from "./helpers/temp-project.ts";
 
 const toolExecutionOptions = {
@@ -49,8 +54,12 @@ describe("agent runtime workflow", () => {
       await runGit(["add", "index.ts"]);
 
       const events: ExecutionEvent[] = [];
+      const historyFilePath = ".disco/runs/run_1/execution-events.jsonl";
       const executionTracker = createExecutionTracker({
         createId: () => `exec_${events.length + 1}`,
+        historySink: createJsonlExecutionHistorySink({
+          filePath: historyFilePath,
+        }),
         onEvent: (event) => {
           events.push(event);
         },
@@ -154,6 +163,90 @@ describe("agent runtime workflow", () => {
         "getDiff",
       ]);
       expect(events.every((event) => event.record.kind === "tool")).toBe(true);
+
+      const persistedEvents = readJsonlExecutionHistoryEvents({
+        text: await Deno.readTextFile(historyFilePath),
+      });
+
+      expect(persistedEvents.map((event) => event.sequence)).toEqual(
+        events.map((event) => event.sequence),
+      );
+      expect(completedToolNames(persistedEvents)).toEqual([
+        "readFile",
+        "applyPatch",
+        "applyPatch",
+        "gitStatus",
+        "getDiff",
+      ]);
+    });
+  });
+
+  it("persists approval-related applyPatch state changes", async () => {
+    await withTempProject(async () => {
+      await Deno.writeTextFile("old.txt", "remove me\n");
+
+      const events: ExecutionEvent[] = [];
+      const historyFilePath = ".disco/runs/run_approval/execution-events.jsonl";
+      const executionTracker = createExecutionTracker({
+        createId: () => `exec_${events.length + 1}`,
+        historySink: createJsonlExecutionHistorySink({
+          filePath: historyFilePath,
+        }),
+        onEvent: (event) => {
+          events.push(event);
+        },
+      });
+      const applyPatchTool = createApplyPatchTool({
+        executionTracker,
+        prompt: async () => ({ decision: "approve_once" }),
+      });
+
+      const result = await applyPatchTool.execute?.(
+        {
+          patch: `*** Begin Patch
+*** Delete File: old.txt
+*** End Patch`,
+        },
+        toolExecutionOptions,
+      );
+
+      expect(result).toMatchObject({
+        ok: true,
+        data: {
+          changedFiles: ["old.txt"],
+          dryRun: false,
+        },
+        meta: {
+          approvalRequired: true,
+          executionId: "exec_1",
+        },
+      });
+
+      const persistedEvents = readJsonlExecutionHistoryEvents({
+        text: await Deno.readTextFile(historyFilePath),
+      });
+
+      expect(persistedEvents.map((event) => event.record.status)).toEqual([
+        "created",
+        "waiting_for_approval",
+        "approved",
+        "running",
+        "completed",
+      ]);
+      expect(persistedEvents.map((event) => event.record.toolName)).toEqual([
+        "applyPatch",
+        "applyPatch",
+        "applyPatch",
+        "applyPatch",
+        "applyPatch",
+      ]);
+      expect(persistedEvents.map((event) => event.sequence)).toEqual([
+        1,
+        2,
+        3,
+        4,
+        5,
+      ]);
     });
   });
 });

@@ -220,6 +220,54 @@ Records include timing fields such as `startedAt`, `completedAt`, and
 `durationMs`. The tracker also emits `execution_state_changed` events with a
 monotonic `sequence`.
 
+## Persistent Execution History
+
+Execution history persistence lives in
+[`src/execution-history.ts`](../src/execution-history.ts).
+
+The execution tracker supports an optional `historySink`:
+
+```ts
+createExecutionTracker({
+  historySink: createJsonlExecutionHistorySink({
+    filePath: ".disco/runs/<runId>/execution-events.jsonl",
+  }),
+});
+```
+
+The persisted event shape is:
+
+```ts
+{
+  type: "execution_state_changed";
+  sequence: number;
+  timestamp: string;
+  record: ExecutionRecord;
+}
+```
+
+The JSONL sink writes one event per line:
+
+```text
+.disco/runs/<runId>/execution-events.jsonl
+```
+
+The sink creates parent directories and appends events in tracker sequence
+order. `ExecutionHistorySink.append` is synchronous by design. If history cannot
+be written, the current execution fails instead of silently losing the record.
+
+`readJsonlExecutionHistoryEvents` reads JSONL text back into
+`ExecutionHistoryEvent[]` and ignores empty lines.
+
+Current coverage proves:
+
+- regular tool execution events can be persisted
+- approval-related `applyPatch` states can be persisted
+- JSONL history can be read back as valid event objects
+
+CLI runtime wiring is intentionally deferred until Phase 2 of resume work,
+because real CLI persistence needs a stable run id and run directory metadata.
+
 ## Result Envelope
 
 Tool output uses [`AgentToolResult`](../src/agent-tool-result.ts):
@@ -279,7 +327,7 @@ testing the tool chain.
 
 This project is intentionally small. Known limits:
 
-- execution history is in memory only
+- CLI runs do not yet create stable run directories or run metadata
 - no resume after process exit
 - no persisted approval history
 - no commit or pull request workflow tool
