@@ -8,12 +8,13 @@ import {
   createExecutionTracker,
   executeToolWithState,
 } from "../src/execution-state.ts";
+import { getExecutionHistoryPath } from "../src/run-metadata.ts";
 import { withTempProject } from "./helpers/temp-project.ts";
 
 describe("JSONL execution history sink", () => {
   it("appends execution events as valid JSONL in order", async () => {
     await withTempProject(async () => {
-      const filePath = ".disco/runs/run_1/execution-events.jsonl";
+      const filePath = getExecutionHistoryPath({ runId: "run_1" });
       let id = 0;
       let timestamp = 0;
 

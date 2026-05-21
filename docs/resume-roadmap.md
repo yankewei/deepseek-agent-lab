@@ -508,7 +508,7 @@ Implemented:
 
 ### Phase 2: Run Directory And Run Metadata
 
-Status: not started
+Status: done
 
 Create a stable run directory and metadata file.
 
@@ -524,6 +524,226 @@ Done when:
 - every CLI run has a persisted run id
 - `run.json` records prompt, cwd, timestamps, and status
 - completed and failed runs update their status
+
+#### Phase 2 Work Breakdown
+
+The goal of this phase is to give every agent run a stable identity and a
+metadata file. Execution history already knows how to write events, but it still
+needs a real run directory to write into.
+
+##### Step 1. Define `RunMetadata`
+
+Status: done
+
+Output:
+
+- Add a stable type for persisted run metadata.
+- Keep it independent from filesystem writing.
+
+Schema:
+
+```ts
+export type RunStatus = "running" | "completed" | "failed" | "interrupted";
+
+export type RunMetadata = {
+  runId: string;
+  startedAt: string;
+  completedAt?: string;
+  cwd: string;
+  userPrompt: string;
+  status: RunStatus;
+};
+```
+
+Done when:
+
+- The type exists in code.
+- Future helpers can use it for `.disco/runs/<runId>/run.json`.
+
+Implemented:
+
+- Added `RunStatus` and `RunMetadata` in `src/run-metadata.ts`.
+- Did not add file writing yet. That belongs to later Phase 2 steps.
+
+##### Step 2. Design Run Id Generation
+
+Status: done
+
+Output:
+
+- Choose the first run id format.
+- Keep the id stable, filesystem-safe, and easy to inspect.
+
+Done when:
+
+- Tests can generate deterministic run ids.
+- Production code can generate unique run ids.
+
+Implemented:
+
+- Added `createRunId` in `src/run-metadata.ts`.
+- The first run id format is:
+
+```text
+run_YYYYMMDDTHHMMSSmmmZ_<randomSuffix>
+```
+
+Example:
+
+```text
+run_20260102T030405006Z_abcdef12
+```
+
+- The timestamp keeps run directories readable and sortable.
+- The random suffix avoids collisions when multiple runs start in the same
+  millisecond.
+- Tests can inject `now` and `randomSuffix` for deterministic ids.
+- Production code uses the current time and a short UUID suffix.
+
+##### Step 3. Implement Run Directory Helper
+
+Status: done
+
+Output:
+
+- Add a helper that maps a run id to `.disco/runs/<runId>/`.
+- Keep path construction centralized.
+
+Done when:
+
+- Tests can create a run directory path without duplicating strings.
+- Future files can share the same directory helper.
+
+Implemented:
+
+- Added `assertValidRunId`.
+- Added `getRunDirectory`.
+- Added `getRunMetadataPath`.
+- Added `getExecutionHistoryPath`.
+- The default metadata root is `.disco`.
+- Invalid run ids are rejected before building paths.
+
+##### Step 4. Write Initial `run.json`
+
+Status: done
+
+Output:
+
+- Create the run directory.
+- Write initial metadata with status `running`.
+
+Done when:
+
+- A test creates `.disco/runs/<runId>/run.json`.
+- The file records `runId`, `startedAt`, `cwd`, `userPrompt`, and `status`.
+
+Implemented:
+
+- Added `createInitialRunMetadata`.
+- Added `writeInitialRunMetadata`.
+- Initial metadata uses status `running`.
+- `writeInitialRunMetadata` creates `.disco/runs/<runId>/` and writes
+  `run.json`.
+- Existing `run.json` files are not overwritten.
+
+##### Step 5. Update Run Status
+
+Status: done
+
+Output:
+
+- Add a helper to update run metadata status.
+- Set `completedAt` for terminal statuses.
+
+Done when:
+
+- Tests can move a run from `running` to `completed`.
+- Tests can move a run from `running` to `failed`.
+
+Implemented:
+
+- Added `readRunMetadata`.
+- Added `updateRunStatus`.
+- Terminal statuses `completed`, `failed`, and `interrupted` write
+  `completedAt`.
+- Non-terminal `running` does not write `completedAt`.
+- Tests cover `running -> completed`, `running -> failed`, and unchanged
+  `running` status.
+
+##### Step 6. Wire Run Directory Into History Path
+
+Status: done
+
+Output:
+
+- Build the execution history path from the run directory helper.
+- Avoid hard-coded `.disco/runs/...` strings in workflow tests.
+
+Done when:
+
+- The existing JSONL workflow tests use the run directory helper.
+- Execution events still persist to `execution-events.jsonl`.
+
+Implemented:
+
+- Updated JSONL sink tests to use `getExecutionHistoryPath`.
+- Updated agent runtime workflow tests to use `getExecutionHistoryPath`.
+- Removed hard-coded `.disco/runs/<runId>/execution-events.jsonl` strings from
+  workflow tests.
+
+##### Step 7. Wire Run Metadata Into One Runtime Path
+
+Status: done
+
+Output:
+
+- Add an integration-style test that creates run metadata and execution history
+  together.
+
+Done when:
+
+- A test produces both `run.json` and `execution-events.jsonl` for one run id.
+
+Implemented:
+
+- Updated the agent runtime workflow test to create initial run metadata before
+  tool execution.
+- The same run id now produces:
+  - `run.json`
+  - `execution-events.jsonl`
+- The workflow updates run status to `completed` after tool execution and
+  verifies the persisted `run.json`.
+
+##### Step 8. Document Phase 2 Behavior
+
+Status: done
+
+Output:
+
+- Update runtime docs with run metadata behavior.
+- Update this roadmap with completed implementation details.
+
+Done when:
+
+- Phase 2 can move to `done`.
+- Phase 3 can depend on stable run directories.
+
+Implemented:
+
+- Updated Phase 2 status to `done`.
+- Documented run metadata behavior in `docs/runtime.md`.
+- Future phases can depend on:
+  - `RunMetadata`
+  - `RunStatus`
+  - `createRunId`
+  - `getRunDirectory`
+  - `getRunMetadataPath`
+  - `getExecutionHistoryPath`
+  - `createInitialRunMetadata`
+  - `writeInitialRunMetadata`
+  - `readRunMetadata`
+  - `updateRunStatus`
+  - `.disco/runs/<runId>/run.json`
 
 ### Phase 3: Persist Tool Calls And Tool Results
 

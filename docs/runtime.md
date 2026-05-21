@@ -265,8 +265,60 @@ Current coverage proves:
 - approval-related `applyPatch` states can be persisted
 - JSONL history can be read back as valid event objects
 
-CLI runtime wiring is intentionally deferred until Phase 2 of resume work,
-because real CLI persistence needs a stable run id and run directory metadata.
+## Run Metadata
+
+Run metadata lives in [`src/run-metadata.ts`](../src/run-metadata.ts).
+
+Each persisted run uses one directory:
+
+```text
+.disco/runs/<runId>/
+  run.json
+  execution-events.jsonl
+```
+
+`run.json` uses this shape:
+
+```ts
+{
+  runId: string;
+  startedAt: string;
+  completedAt?: string;
+  cwd: string;
+  userPrompt: string;
+  status: "running" | "completed" | "failed" | "interrupted";
+}
+```
+
+Run ids use this format:
+
+```text
+run_YYYYMMDDTHHMMSSmmmZ_<randomSuffix>
+```
+
+The timestamp keeps directories readable and sortable. The random suffix avoids
+collisions when multiple runs start in the same millisecond. Run ids are
+validated before paths are built, and only filesystem-safe characters are
+allowed.
+
+The run metadata helpers provide:
+
+- `createRunId`
+- `getRunDirectory`
+- `getRunMetadataPath`
+- `getExecutionHistoryPath`
+- `createInitialRunMetadata`
+- `writeInitialRunMetadata`
+- `readRunMetadata`
+- `updateRunStatus`
+
+Initial metadata is written with status `running`. Terminal statuses
+`completed`, `failed`, and `interrupted` set `completedAt`.
+
+The integration workflow test now proves one run id can produce both `run.json`
+and `execution-events.jsonl`. The CLI entrypoint still does not write run
+metadata itself; that is a future wiring step once the CLI run lifecycle is
+formalized.
 
 ## Result Envelope
 

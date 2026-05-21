@@ -8,6 +8,13 @@ import {
   createExecutionTracker,
   type ExecutionEvent,
 } from "../src/execution-state.ts";
+import {
+  createInitialRunMetadata,
+  getExecutionHistoryPath,
+  readRunMetadata,
+  updateRunStatus,
+  writeInitialRunMetadata,
+} from "../src/run-metadata.ts";
 import type { AgentToolResult } from "../src/agent-tool-result.ts";
 import { createTools } from "../src/tools/index.ts";
 import { createApplyPatchTool } from "../src/tools/apply-patch.ts";
@@ -45,7 +52,7 @@ function asToolResult<T>(
 
 describe("agent runtime workflow", () => {
   it("reads, previews, edits, and inspects git state through tools", async () => {
-    await withTempProject(async () => {
+    await withTempProject(async (projectRoot) => {
       await runGit(["init"]);
       await Deno.writeTextFile(
         "index.ts",
@@ -53,8 +60,17 @@ describe("agent runtime workflow", () => {
       );
       await runGit(["add", "index.ts"]);
 
+      const runId = "run_1";
+      const runMetadata = createInitialRunMetadata({
+        runId,
+        cwd: projectRoot,
+        userPrompt: "rename agent to coding-agent",
+        now: () => new Date("2026-01-02T03:04:05.006Z"),
+      });
+      writeInitialRunMetadata({ metadata: runMetadata });
+
       const events: ExecutionEvent[] = [];
-      const historyFilePath = ".disco/runs/run_1/execution-events.jsonl";
+      const historyFilePath = getExecutionHistoryPath({ runId });
       const executionTracker = createExecutionTracker({
         createId: () => `exec_${events.length + 1}`,
         historySink: createJsonlExecutionHistorySink({
@@ -178,6 +194,18 @@ describe("agent runtime workflow", () => {
         "gitStatus",
         "getDiff",
       ]);
+
+      updateRunStatus({
+        runId,
+        status: "completed",
+        now: () => new Date("2026-01-02T03:04:10.000Z"),
+      });
+
+      expect(readRunMetadata({ runId })).toEqual({
+        ...runMetadata,
+        status: "completed",
+        completedAt: "2026-01-02T03:04:10.000Z",
+      });
     });
   });
 
@@ -186,7 +214,9 @@ describe("agent runtime workflow", () => {
       await Deno.writeTextFile("old.txt", "remove me\n");
 
       const events: ExecutionEvent[] = [];
-      const historyFilePath = ".disco/runs/run_approval/execution-events.jsonl";
+      const historyFilePath = getExecutionHistoryPath({
+        runId: "run_approval",
+      });
       const executionTracker = createExecutionTracker({
         createId: () => `exec_${events.length + 1}`,
         historySink: createJsonlExecutionHistorySink({
