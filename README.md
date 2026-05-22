@@ -19,7 +19,7 @@ user task
 - DeepSeek model provider
 - Zod tool schemas
 - Execa for controlled command execution
-- Vitest for tests
+- Bun's built-in test runner
 
 ## Setup
 
@@ -64,9 +64,9 @@ bun test           # Run tests
 
 ## Binary Build
 
-The binary build uses Deno's `compile` command. It bundles the TypeScript
-entrypoint and runtime dependencies into one executable for the current
-operating system and CPU architecture.
+The binary build uses Bun's `build --compile` command. It bundles the
+TypeScript entrypoint and runtime dependencies into one executable for the
+current operating system and CPU architecture.
 
 ```bash
 bun run build:bin
@@ -87,7 +87,7 @@ dist/ds-coding-agent.exe
 To customize the output path:
 
 ```bash
-bun build --compile --allow-all --output dist/agent ./index.ts
+bun build --compile --outfile dist/agent index.ts
 ```
 
 The executable still reads configuration from the environment, so keep using

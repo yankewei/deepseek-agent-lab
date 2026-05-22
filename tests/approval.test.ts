@@ -1,5 +1,6 @@
 import { describe, it } from "bun:test";
 import { expect } from "bun:test";
+import { stripVTControlCharacters } from "node:util";
 import {
   type ApprovalRequest,
   formatApprovalRequest,
@@ -58,35 +59,37 @@ describe("formatApprovalRequest", () => {
         Reason: "install test framework",
       },
     });
+    const plainOutput = stripVTControlCharacters(output);
 
-    expect(output).toContain("Approval Required");
-    expect(output).toContain("Action: run-command");
-    expect(output).toContain("Subject: bun add npm:vitest");
-    expect(output).toContain("Risk:");
-    expect(output).toContain("Command: bun add npm:vitest");
-    expect(output).toContain("y - approve once");
-    expect(output).toContain("n - deny");
-    expect(output).toContain("╭");
-    expect(output).toContain("╰");
+    expect(plainOutput).toContain("Approval Required");
+    expect(plainOutput).toContain("Action: run-command");
+    expect(plainOutput).toContain("Subject: bun add npm:vitest");
+    expect(plainOutput).toContain("Risk:");
+    expect(plainOutput).toContain("Command: bun add npm:vitest");
+    expect(plainOutput).toContain("y - approve once");
+    expect(plainOutput).toContain("n - deny");
+    expect(plainOutput).toContain("╭");
+    expect(plainOutput).toContain("╰");
   });
 
   it("formats suggested policy amendments as an approval option", () => {
-    expect(
-      formatApprovalRequest({
-        action: "run-command",
-        title: "Run command requiring approval",
-        subject: "bun add npm:vitest",
-        riskLevel: "medium",
-        policyReason: "Dependency command requires user approval.",
-        suggestedPolicyAmendment: {
-          type: "allow-command-prefix",
-          prefix: "bun add",
-        },
-        details: {
-          Command: "bun add npm:vitest",
-          Reason: "install test framework",
-        },
-      }),
-    ).toContain("a - always allow prefix: bun add");
+    const output = formatApprovalRequest({
+      action: "run-command",
+      title: "Run command requiring approval",
+      subject: "bun add npm:vitest",
+      riskLevel: "medium",
+      policyReason: "Dependency command requires user approval.",
+      suggestedPolicyAmendment: {
+        type: "allow-command-prefix",
+        prefix: "bun add",
+      },
+      details: {
+        Command: "bun add npm:vitest",
+        Reason: "install test framework",
+      },
+    });
+    const plainOutput = stripVTControlCharacters(output);
+
+    expect(plainOutput).toContain("a - always allow prefix: bun add");
   });
 });
