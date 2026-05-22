@@ -1,5 +1,5 @@
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
-import { realpathSync } from "node:fs";
+import { realpath } from "node:fs/promises";
 
 const blockedWriteFiles = new Set([".env", "pnpm-lock.yaml"]);
 const blockedWriteDirectories = new Set([
@@ -39,8 +39,8 @@ function assertWritableRelativePath(relativePath: string) {
 }
 
 export async function resolveExistingProjectPath(inputPath: string) {
-  const root = realpathSync(process.cwd());
-  const absolutePath = realpathSync(resolve(root, inputPath));
+  const root = await realpath(process.cwd());
+  const absolutePath = await realpath(resolve(root, inputPath));
   const rel = assertInsideProject(root, absolutePath);
 
   return {
@@ -59,10 +59,10 @@ export async function resolveWritableProjectPath(inputPath: string) {
 }
 
 export async function resolveNewWritableProjectPath(inputPath: string) {
-  const root = realpathSync(process.cwd());
+  const root = await realpath(process.cwd());
   const absolutePath = resolve(root, inputPath);
   const rel = assertInsideProject(root, absolutePath);
-  const parentDirectory = realpathSync(dirname(absolutePath));
+  const parentDirectory = await realpath(dirname(absolutePath));
 
   assertInsideProject(root, parentDirectory);
   assertWritableRelativePath(rel);

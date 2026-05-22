@@ -6,7 +6,6 @@ import {
   type ExecutionTracker,
 } from "../execution-state";
 import { resolveWritableProjectPath } from "../project-path";
-import { writeFileSync } from "node:fs";
 
 function countOccurrences(text: string, search: string) {
   let count = 0;
@@ -43,7 +42,7 @@ export async function editFile(
 
   const updatedText = currentText.replace(input.oldText, input.newText);
 
-  writeFileSync(projectPath.absolutePath, updatedText);
+  await Bun.write(projectPath.absolutePath, updatedText);
 
   return {
     path: projectPath.relativePath,

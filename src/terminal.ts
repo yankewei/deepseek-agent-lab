@@ -1,9 +1,5 @@
 import { bold, cyan, gray, green, magenta, red, yellow } from "picocolors";
 
-export function isColorEnabled(): boolean {
-  return process.stdout.isTTY === true && !process.env.NO_COLOR;
-}
-
 export function getTerminalWidth(): number {
   return process.stdout.columns ?? 80;
 }

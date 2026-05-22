@@ -27,7 +27,8 @@ describe("project path resolver", () => {
 
   it("rejects symlinks that point outside the current project", async () => {
     await withTempProject(async (projectRoot) => {
-      const outsideFile = join(mkdtempSync(join(tmpdir(), "ds-coding-agent-outside-")), "file.txt");
+      const outsideDir = mkdtempSync(join(tmpdir(), "ds-coding-agent-outside-"));
+      const outsideFile = join(outsideDir, "file.txt");
       await Bun.write(outsideFile, "secret\n");
       symlinkSync(outsideFile, join(projectRoot, "linked-secret.txt"));
 
@@ -36,7 +37,7 @@ describe("project path resolver", () => {
           resolveExistingProjectPath("linked-secret.txt"),
         ).rejects.toThrow(/Path must stay inside the current project/);
       } finally {
-        rmSync(outsideFile);
+        rmSync(outsideDir, { recursive: true });
       }
     });
   });

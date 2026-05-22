@@ -15,7 +15,7 @@ import {
   resolveNewWritableProjectPath,
   resolveWritableProjectPath,
 } from "../project-path";
-import { closeSync, openSync, rmSync, writeSync } from "node:fs";
+import { unlink } from "node:fs/promises";
 
 type AddOperation = {
   type: "add";
@@ -293,14 +293,12 @@ export async function applyPatch(input: { patch: string; dryRun?: boolean }) {
 
   for (const operation of preparedOperations) {
     if (operation.type === "add") {
-      const fd = openSync(operation.projectPath.absolutePath, "wx");
-      writeSync(fd, operation.content);
-      closeSync(fd);
+      await Bun.write(operation.projectPath.absolutePath, operation.content);
       continue;
     }
 
     if (operation.type === "delete") {
-      rmSync(operation.projectPath.absolutePath);
+      await unlink(operation.projectPath.absolutePath);
       continue;
     }
 
