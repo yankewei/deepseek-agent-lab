@@ -3,16 +3,16 @@ import { expect } from "bun:test";
 import {
   assertValidRunId,
   createInitialRunMetadata,
+  createProjectSlug,
   createRunId,
-  getExecutionHistoryPath,
-  getRunDirectory,
-  getRunMetadataPath,
-  getToolCallsPath,
-  getToolResultsPath,
+  getProjectRootDirectory,
+  getRunLogPath,
+  getRunsDirectory,
   readRunMetadata,
   updateRunStatus,
   writeInitialRunMetadata,
 } from "../src/run-metadata";
+import { readRunLogEvents } from "../src/run-event-log";
 import { withTempProject } from "./helpers/temp-project";
 
 describe("run metadata", () => {
@@ -34,37 +34,45 @@ describe("run metadata", () => {
     expect(runId).toMatch(/^[a-zA-Z0-9_]+$/);
   });
 
-  it("maps run ids to the default .disco run directory", () => {
-    expect(getRunDirectory({ runId: "run_1" })).toBe(".disco/runs/run_1");
-  });
-
-  it("maps run ids to known run file paths", () => {
-    expect(getRunMetadataPath({ runId: "run_1" })).toBe(
-      ".disco/runs/run_1/run.json",
+  it("creates stable project slugs from cwd basename and hash", () => {
+    expect(createProjectSlug({ cwd: "/Users/alice/work/my app" })).toMatch(
+      /^my-app-[a-f0-9]{8}$/,
     );
-    expect(getExecutionHistoryPath({ runId: "run_1" })).toBe(
-      ".disco/runs/run_1/execution-events.jsonl",
-    );
-    expect(getToolCallsPath({ runId: "run_1" })).toBe(
-      ".disco/runs/run_1/tool-calls.jsonl",
-    );
-    expect(getToolResultsPath({ runId: "run_1" })).toBe(
-      ".disco/runs/run_1/tool-results.jsonl",
+    expect(createProjectSlug({ cwd: "/Users/alice/work/app" })).not.toBe(
+      createProjectSlug({ cwd: "/Users/alice/demo/app" }),
     );
   });
 
-  it("supports a custom metadata root directory", () => {
-    expect(getRunDirectory({ runId: "run_1", rootDir: ".custom" })).toBe(
-      ".custom/runs/run_1",
+  it("maps cwd to a project root directory", () => {
+    const cwd = "/Users/alice/work/my-app";
+    const projectSlug = createProjectSlug({ cwd });
+
+    expect(getProjectRootDirectory({ cwd })).toBe(
+      `.disco/projects/${projectSlug}`,
+    );
+    expect(getProjectRootDirectory({ cwd, rootDir: "/Users/alice/.disco" }))
+      .toBe(`/Users/alice/.disco/projects/${projectSlug}`);
+  });
+
+  it("maps run ids to the default .disco run log", () => {
+    expect(getRunsDirectory()).toBe(".disco/runs");
+    expect(getRunLogPath({ runId: "run_1" })).toBe(
+      ".disco/runs/run_1.jsonl",
+    );
+  });
+
+  it("supports a custom run log root directory", () => {
+    expect(getRunLogPath({ runId: "run_1", rootDir: ".custom" })).toBe(
+      ".custom/runs/run_1.jsonl",
     );
   });
 
   it("rejects invalid run ids before building paths", () => {
     expect(() => assertValidRunId("")).toThrow(/Invalid run id/);
-    expect(() => getRunDirectory({ runId: "../run_1" })).toThrow(
+    expect(() => getRunLogPath({ runId: "../run_1" })).toThrow(
       /Invalid run id/,
     );
-    expect(() => getRunDirectory({ runId: "run-1" })).toThrow(
+    expect(() => getRunLogPath({ runId: "run-1" })).toThrow(
       /Invalid run id/,
     );
   });
@@ -86,7 +94,7 @@ describe("run metadata", () => {
     });
   });
 
-  it("writes initial run metadata to run.json", async () => {
+  it("writes initial run metadata as the first run log event", async () => {
     await withTempProject(async (projectRoot) => {
       const metadata = createInitialRunMetadata({
         runId: "run_1",
@@ -98,18 +106,22 @@ describe("run metadata", () => {
       const filePath = writeInitialRunMetadata({ metadata });
       const text = await Bun.file(filePath).text();
 
-      expect(filePath).toBe(".disco/runs/run_1/run.json");
-      expect(JSON.parse(text)).toEqual({
-        runId: "run_1",
-        startedAt: "2026-01-02T03:04:05.006Z",
-        cwd: projectRoot,
-        userPrompt: "inspect the project",
-        status: "running",
-      });
+      expect(filePath).toBe(".disco/runs/run_1.jsonl");
+      expect(readRunLogEvents({ text })).toEqual([
+        {
+          type: "session_meta",
+          timestamp: "2026-01-02T03:04:05.006Z",
+          runId: "run_1",
+          startedAt: "2026-01-02T03:04:05.006Z",
+          cwd: projectRoot,
+          userPrompt: "inspect the project",
+          status: "running",
+        },
+      ]);
     });
   });
 
-  it("does not overwrite an existing run.json", async () => {
+  it("does not overwrite an existing run log", async () => {
     await withTempProject(async () => {
       const metadata = createInitialRunMetadata({
         runId: "run_1",

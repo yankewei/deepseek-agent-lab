@@ -48,6 +48,7 @@ describe("writable path resolver", () => {
     await withTempProject(async () => {
       await Bun.write("index.ts", "console.log('ok');\n");
       await Bun.write(".env", "TOKEN=secret\n");
+      await Bun.write("bun.lock", "# bun lockfile\n");
       await Bun.write("pnpm-lock.yaml", "lockfileVersion: '9.0'\n");
       mkdirSync("node_modules/pkg", { recursive: true });
       await Bun.write("node_modules/pkg/index.ts", "");
@@ -57,6 +58,8 @@ describe("writable path resolver", () => {
       await expect(resolveWritableProjectPath(".env")).rejects.toThrow(
         /File is not writable/,
       );
+      await expect(resolveWritableProjectPath("bun.lock")).rejects
+        .toThrow(/File is not writable/);
       await expect(resolveWritableProjectPath("pnpm-lock.yaml")).rejects
         .toThrow(/File is not writable/);
       await expect(resolveWritableProjectPath("node_modules/pkg/index.ts"))

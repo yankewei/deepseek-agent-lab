@@ -1,7 +1,12 @@
 import { tool } from "ai";
 
 import { z } from "zod";
-import { type ApprovalPrompt, requestApproval } from "../approval";
+import {
+  type ApprovalPrompt,
+  type ApprovalRequest,
+  requestApproval,
+} from "../approval";
+import type { ApprovalHistoryRecorder } from "../approval-history";
 import {
   type AgentToolResult,
   okAgentToolResult,
@@ -317,7 +322,11 @@ export async function applyPatch(input: { patch: string; dryRun?: boolean }) {
 }
 
 export function createApplyPatchTool(
-  options?: { executionTracker?: ExecutionTracker; prompt?: ApprovalPrompt },
+  options?: {
+    executionTracker?: ExecutionTracker;
+    prompt?: ApprovalPrompt;
+    approvalRecorder?: ApprovalHistoryRecorder;
+  },
 ) {
   return tool({
     description: "Apply a safe multi-file patch inside the current project",
@@ -345,19 +354,35 @@ export function createApplyPatchTool(
 
         updateRecord({ status: "waiting_for_approval" });
 
-        const approval = await requestApproval(
-          {
-            action: "apply-patch",
-            title: "Apply patch requiring approval",
-            subject: "Delete file patch",
-            riskLevel: "medium",
-            policyReason: "Patch deletes one or more files.",
-            details: {
-              Patch: patch,
-            },
+        const approvalRequest: ApprovalRequest = {
+          action: "apply-patch",
+          title: "Apply patch requiring approval",
+          subject: "Delete file patch",
+          riskLevel: "medium",
+          policyReason: "Patch deletes one or more files.",
+          details: {
+            Patch: patch,
           },
-          options?.prompt,
-        );
+        };
+        const approvalId = options?.approvalRecorder?.createApprovalId();
+
+        if (approvalId) {
+          options?.approvalRecorder?.recordRequest({
+            approvalId,
+            request: approvalRequest,
+            ...(record ? { executionId: record.id } : {}),
+          });
+        }
+
+        const approval = await requestApproval(approvalRequest, options?.prompt);
+
+        if (approvalId) {
+          options?.approvalRecorder?.recordResult({
+            approvalId,
+            result: approval,
+            ...(record ? { executionId: record.id } : {}),
+          });
+        }
 
         if (approval.decision === "deny") {
           updateRecord({

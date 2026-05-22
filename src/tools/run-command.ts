@@ -11,6 +11,7 @@ import {
 } from "../command-executor";
 import type { ExecutionTracker } from "../execution-state";
 import type { ApprovalPrompt } from "../approval";
+import type { ApprovalHistoryRecorder } from "../approval-history";
 import { classifyCommandExecutionError } from "../errors";
 import { createRuntimeCommandPolicy } from "../policy";
 
@@ -26,6 +27,7 @@ export function createRunCommandTool(options?: {
   executionTracker?: ExecutionTracker;
   prompt?: ApprovalPrompt;
   executeRun?: ExecuteRun;
+  approvalRecorder?: ApprovalHistoryRecorder;
 }) {
   const runtimePolicy = createRuntimeCommandPolicy();
 
@@ -48,6 +50,7 @@ export function createRunCommandTool(options?: {
           options?.executeRun,
           options?.executionTracker,
           runtimePolicy,
+          options?.approvalRecorder,
         );
 
         if ("skipped" in result) {

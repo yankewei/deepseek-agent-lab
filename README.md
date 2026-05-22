@@ -45,7 +45,7 @@ Build a standalone binary for the current platform:
 
 ```bash
 bun run build:bin
-./dist/ds-coding-agent "请分析这个项目"
+./dist/disco "请分析这个项目"
 ```
 
 Run checks:
@@ -75,13 +75,13 @@ bun run build:bin
 The default output path is:
 
 ```text
-dist/ds-coding-agent
+dist/disco
 ```
 
 On Windows, the output file is:
 
 ```text
-dist/ds-coding-agent.exe
+dist/disco.exe
 ```
 
 To customize the output path:

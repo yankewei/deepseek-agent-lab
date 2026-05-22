@@ -10,9 +10,7 @@ import {
 } from "../src/execution-state";
 import {
   createInitialRunMetadata,
-  getExecutionHistoryPath,
-  getToolCallsPath,
-  getToolResultsPath,
+  getRunLogPath,
   readRunMetadata,
   updateRunStatus,
   writeInitialRunMetadata,
@@ -77,13 +75,11 @@ describe("agent runtime workflow", () => {
       writeInitialRunMetadata({ metadata: runMetadata });
 
       const events: ExecutionEvent[] = [];
-      const historyFilePath = getExecutionHistoryPath({ runId });
-      const toolCallsPath = getToolCallsPath({ runId });
-      const toolResultsPath = getToolResultsPath({ runId });
+      const runLogPath = getRunLogPath({ runId });
       const executionTracker = createExecutionTracker({
         createId: () => `exec_${events.length + 1}`,
         historySink: createJsonlExecutionHistorySink({
-          filePath: historyFilePath,
+          filePath: runLogPath,
         }),
         onEvent: (event) => {
           events.push(event);
@@ -93,7 +89,7 @@ describe("agent runtime workflow", () => {
 
       const readFileCallInput = { path: "index.ts" };
       appendPersistedToolCall({
-        filePath: toolCallsPath,
+        filePath: runLogPath,
         record: createPersistedToolCall({
           toolCallId: "call_read_file",
           toolName: "readFile",
@@ -106,7 +102,7 @@ describe("agent runtime workflow", () => {
         { ...toolExecutionOptions, toolCallId: "call_read_file" },
       );
       appendPersistedToolResult({
-        filePath: toolResultsPath,
+        filePath: runLogPath,
         record: createPersistedToolResult({
           toolCallId: "call_read_file",
           toolName: "readFile",
@@ -209,7 +205,7 @@ describe("agent runtime workflow", () => {
       expect(events.every((event) => event.record.kind === "tool")).toBe(true);
 
       const persistedEvents = readJsonlExecutionHistoryEvents({
-        text: await Bun.file(historyFilePath).text(),
+        text: await Bun.file(runLogPath).text(),
       });
 
       expect(persistedEvents.map((event) => event.sequence)).toEqual(
@@ -223,7 +219,7 @@ describe("agent runtime workflow", () => {
         "getDiff",
       ]);
       expect(readPersistedToolCalls({
-        text: await Bun.file(toolCallsPath).text(),
+        text: await Bun.file(runLogPath).text(),
       })).toEqual([
         {
           type: "tool_call",
@@ -236,7 +232,7 @@ describe("agent runtime workflow", () => {
         },
       ]);
       expect(readPersistedToolResults({
-        text: await Bun.file(toolResultsPath).text(),
+        text: await Bun.file(runLogPath).text(),
       })).toEqual([
         {
           type: "tool_result",
@@ -272,13 +268,11 @@ describe("agent runtime workflow", () => {
 
       const runId = "run_approval";
       const events: ExecutionEvent[] = [];
-      const historyFilePath = getExecutionHistoryPath({ runId });
-      const toolCallsPath = getToolCallsPath({ runId });
-      const toolResultsPath = getToolResultsPath({ runId });
+      const runLogPath = getRunLogPath({ runId });
       const executionTracker = createExecutionTracker({
         createId: () => `exec_${events.length + 1}`,
         historySink: createJsonlExecutionHistorySink({
-          filePath: historyFilePath,
+          filePath: runLogPath,
         }),
         onEvent: (event) => {
           events.push(event);
@@ -293,7 +287,7 @@ describe("agent runtime workflow", () => {
 *** End Patch`;
 
       appendPersistedToolCall({
-        filePath: toolCallsPath,
+        filePath: runLogPath,
         record: createPersistedToolCall({
           toolCallId: "call_delete_patch",
           toolName: "applyPatch",
@@ -330,7 +324,7 @@ describe("agent runtime workflow", () => {
       }
 
       appendPersistedToolResult({
-        filePath: toolResultsPath,
+        filePath: runLogPath,
         record: createPersistedToolResult({
           toolCallId: "call_delete_patch",
           toolName: "applyPatch",
@@ -341,7 +335,7 @@ describe("agent runtime workflow", () => {
       });
 
       const persistedEvents = readJsonlExecutionHistoryEvents({
-        text: await Bun.file(historyFilePath).text(),
+        text: await Bun.file(runLogPath).text(),
       });
 
       expect(persistedEvents.map((event) => event.record.status)).toEqual([
@@ -367,7 +361,7 @@ describe("agent runtime workflow", () => {
       ]);
 
       expect(readPersistedToolCalls({
-        text: await Bun.file(toolCallsPath).text(),
+        text: await Bun.file(runLogPath).text(),
       })).toEqual([
         {
           type: "tool_call",
@@ -381,7 +375,7 @@ describe("agent runtime workflow", () => {
       ]);
 
       const persistedToolResults = readPersistedToolResults({
-        text: await Bun.file(toolResultsPath).text(),
+        text: await Bun.file(runLogPath).text(),
       });
       expect(persistedToolResults).toEqual([
         {

@@ -34,10 +34,13 @@ a narrow capability.
 | [`src/policy.ts`](../src/policy.ts)                       | Classifies commands as allow, prompt, or forbidden.                          |
 | [`src/command-executor.ts`](../src/command-executor.ts)   | Applies command policy, approval, execution, and command state tracking.     |
 | [`src/approval.ts`](../src/approval.ts)                   | Defines structured approval requests and prompt handling.                    |
+| [`src/approval-history.ts`](../src/approval-history.ts)   | Defines approval request/result records for the run log.                     |
 | [`src/execution-state.ts`](../src/execution-state.ts)     | Records what happened and emits execution state events.                      |
-| [`src/execution-history.ts`](../src/execution-history.ts) | Persists execution state events as JSONL.                                    |
-| [`src/run-metadata.ts`](../src/run-metadata.ts)           | Builds run ids, run paths, and `run.json` metadata.                          |
-| [`src/tool-history.ts`](../src/tool-history.ts)           | Persists tool calls and results and queries completed write tool calls.      |
+| [`src/execution-history.ts`](../src/execution-history.ts) | Appends and reads execution state events in JSONL text.                      |
+| [`src/run-event-log.ts`](../src/run-event-log.ts)         | Appends and reads the single JSONL timeline for a run.                       |
+| [`src/run-metadata.ts`](../src/run-metadata.ts)           | Builds run ids, run log paths, and metadata summaries from the run log.      |
+| [`src/run-persistence.ts`](../src/run-persistence.ts)     | Wires model, execution, tool, approval, and status events into one run log.  |
+| [`src/tool-history.ts`](../src/tool-history.ts)           | Defines tool call/result records and queries completed write tool calls.     |
 | [`src/agent-tool-result.ts`](../src/agent-tool-result.ts) | Wraps tool output in a consistent `{ ok, data, error, meta }` envelope.      |
 | [`src/errors.ts`](../src/errors.ts)                       | Converts thrown errors into stable agent error codes.                        |
 | [`src/cli-output.ts`](../src/cli-output.ts)               | Formats stream events and debug output for the CLI.                          |
@@ -233,7 +236,7 @@ The execution tracker supports an optional `historySink`:
 ```ts
 createExecutionTracker({
   historySink: createJsonlExecutionHistorySink({
-    filePath: ".disco/runs/<runId>/execution-events.jsonl",
+    filePath: ".disco/runs/<runId>.jsonl",
   }),
 });
 ```
@@ -252,7 +255,14 @@ The persisted event shape is:
 The JSONL sink writes one event per line:
 
 ```text
-.disco/runs/<runId>/execution-events.jsonl
+.disco/runs/<runId>.jsonl
+```
+
+In production CLI runs, this path is the same run log used for model stream,
+tool, approval, and status events:
+
+```text
+$HOME/.disco/projects/<projectSlug>/runs/<runId>.jsonl
 ```
 
 The sink creates parent directories and appends events in tracker sequence
@@ -260,7 +270,8 @@ order. `ExecutionHistorySink.append` is synchronous by design. If history cannot
 be written, the current execution fails instead of silently losing the record.
 
 `readJsonlExecutionHistoryEvents` reads JSONL text back into
-`ExecutionHistoryEvent[]` and ignores empty lines.
+`ExecutionHistoryEvent[]`, ignores empty lines, and filters out non-execution
+events when reading a unified run log.
 
 Current coverage proves:
 
@@ -272,28 +283,36 @@ Current coverage proves:
 
 Run metadata lives in [`src/run-metadata.ts`](../src/run-metadata.ts).
 
-Each persisted run uses one directory:
+Each persisted run uses one JSONL file. The library-level default root is
+`.disco`, while the CLI stores production runs under
+`$HOME/.disco/projects/<projectSlug>/`.
 
 ```text
-.disco/runs/<runId>/
-  run.json
-  execution-events.jsonl
-  tool-calls.jsonl
-  tool-results.jsonl
+.disco/runs/<runId>.jsonl
 ```
 
-`run.json` uses this shape:
+The first event in the run log is `session_meta`:
 
 ```ts
 {
+  type: "session_meta";
+  timestamp: string;
   runId: string;
   startedAt: string;
-  completedAt?: string;
   cwd: string;
   userPrompt: string;
-  status: "running" | "completed" | "failed" | "interrupted";
+  status: "running";
 }
 ```
+
+Terminal status is represented by an appended `run_status_changed` event.
+`readRunMetadata` derives the current metadata summary by reading the run log
+instead of loading a separate metadata file.
+
+For CLI runs, `projectSlug` is derived from the current working directory as
+`<basename>-<cwdHash>`, such as `ds-coding-agent-a1b2c3d4`. The slug is an index
+for quickly finding runs for a project. The full `cwd` remains in the
+`session_meta` event as the canonical source of truth.
 
 Run ids use this format:
 
@@ -309,21 +328,22 @@ allowed.
 The run metadata helpers provide:
 
 - `createRunId`
-- `getRunDirectory`
-- `getRunMetadataPath`
-- `getExecutionHistoryPath`
+- `getRunsDirectory`
+- `getProjectRootDirectory`
+- `getRunLogPath`
 - `createInitialRunMetadata`
 - `writeInitialRunMetadata`
 - `readRunMetadata`
 - `updateRunStatus`
 
-Initial metadata is written with status `running`. Terminal statuses
-`completed`, `failed`, and `interrupted` set `completedAt`.
+Initial metadata is written as the first JSONL line with status `running`.
+Terminal statuses `completed`, `failed`, and `interrupted` append a
+`run_status_changed` event with `completedAt`.
 
-The integration workflow test now proves one run id can produce both `run.json`
-and `execution-events.jsonl`. The CLI entrypoint still does not write run
-metadata itself; that is a future wiring step once the CLI run lifecycle is
-formalized.
+The CLI entrypoint creates a run id at startup, writes
+`$HOME/.disco/projects/<projectSlug>/runs/<runId>.jsonl`, prints the run id in
+the start banner, persists model stream events, and updates the run status to
+`completed` or `failed` when the stream ends.
 
 ## Tool Call History
 
@@ -332,10 +352,10 @@ Tool call history lives in [`src/tool-history.ts`](../src/tool-history.ts).
 Execution history answers what actually happened. Tool call history answers what
 the model asked for and what result was returned to the model.
 
-Tool calls are stored in:
+Tool calls are stored in the run log:
 
 ```text
-.disco/runs/<runId>/tool-calls.jsonl
+.disco/runs/<runId>.jsonl
 ```
 
 Each line uses this shape:
@@ -350,10 +370,10 @@ Each line uses this shape:
 }
 ```
 
-Tool results are stored in:
+Tool results are stored in the same run log:
 
 ```text
-.disco/runs/<runId>/tool-results.jsonl
+.disco/runs/<runId>.jsonl
 ```
 
 Each line uses this shape:
@@ -370,7 +390,7 @@ Each line uses this shape:
 ```
 
 `toolCallId` connects a result to the original model tool call. `executionId`
-connects a result to an execution record in `execution-events.jsonl` when the
+connects a result to an execution record in the same run log when the
 tool was tracked by the execution tracker.
 
 `findCompletedWriteToolCalls` joins three inputs:
@@ -397,6 +417,75 @@ Current coverage proves:
 - a workflow can persist tool calls and results beside execution history
 - an `applyPatch` result can be correlated to a completed execution record
 - failed or incomplete executions are not treated as completed write tool calls
+
+The CLI persists model text deltas, reasoning deltas, tool calls, tool results,
+tool errors, step boundaries, status changes, approval records, and execution
+state changes into the same run log. When a tool result includes
+`meta.executionId`, the persisted result stores it so resume logic can connect
+what the model saw with the execution record.
+
+## Approval History
+
+Approval history lives in [`src/approval-history.ts`](../src/approval-history.ts).
+
+Approval events are stored in the run log:
+
+```text
+.disco/runs/<runId>.jsonl
+```
+
+Each request line uses this shape:
+
+```ts
+{
+  type: "approval_requested";
+  approvalId: string;
+  request: ApprovalRequest;
+  timestamp: string;
+  executionId?: string;
+}
+```
+
+Each result line uses this shape:
+
+```ts
+{
+  type: "approval_resolved";
+  approvalId: string;
+  result: ApprovalResult;
+  timestamp: string;
+  executionId?: string;
+}
+```
+
+`approvalId` connects a request to its result. `executionId` connects approval
+history to the command or tool execution record when that execution record is
+available.
+
+Runtime approval history is connected for:
+
+- `runCommand` dependency command approvals
+- `applyPatch` delete patch approvals
+
+The request event is written before prompting the user. The result event is
+written after the approval prompt returns. If the process exits while waiting
+for approval, resume logic can detect a request without a matching result.
+
+## Resume Index
+
+Resume indexing lives in [`src/resume-index.ts`](../src/resume-index.ts).
+
+The resume index uses the current `cwd` to compute the project root directory:
+
+```text
+$HOME/.disco/projects/<projectSlug>/
+```
+
+It lists only runs whose `session_meta.cwd` matches the current `cwd`. Loading a
+run also performs the same identity check. If a run is found under the current
+project slug but its metadata points at another `cwd`, the helper returns a
+`CWD_MISMATCH` result instead of trying to switch directories or compare Git
+state.
 
 ## Result Envelope
 
@@ -457,9 +546,7 @@ testing the tool chain.
 
 This project is intentionally small. Known limits:
 
-- CLI runs do not yet create stable run directories or run metadata
 - no resume after process exit
-- no persisted approval history
 - no commit or pull request workflow tool
 - `applyPatch` supports only a small patch subset
 - final summary behavior is guided by prompt text, not a dedicated summary

@@ -7,6 +7,7 @@ import {
   createApplyPatchTool,
 } from "../src/tools/apply-patch";
 import { editFileTool } from "../src/tools/edit-file";
+import { createExecutionTracker } from "../src/execution-state";
 import { getDiffTool } from "../src/tools/get-diff";
 import { createGitStatusTool } from "../src/tools/git-status";
 import { listFilesTool } from "../src/tools/list-files";
@@ -236,6 +237,63 @@ describe("tool AgentToolResult wrappers", () => {
         },
       });
       expect(await Bun.file("old.txt").text()).toBe("remove me\n");
+    });
+  });
+
+  it("records delete patch approval requests and results", async () => {
+    await withTempProject(async () => {
+      await Bun.write("old.txt", "remove me\n");
+      const records: unknown[] = [];
+      const tracker = createExecutionTracker({
+        createId: () => "exec_1",
+      });
+      const applyPatchTool = createApplyPatchTool({
+        executionTracker: tracker,
+        approvalRecorder: {
+          createApprovalId: () => "approval_1",
+          recordRequest: (record) => records.push(record),
+          recordResult: (record) => records.push(record),
+        },
+        prompt: async () => ({
+          decision: "deny",
+          reason: "Not now.",
+        }),
+      });
+
+      const result = await applyPatchTool.execute?.(
+        {
+          patch: `*** Begin Patch
+*** Delete File: old.txt
+*** End Patch`,
+        },
+        toolExecutionOptions,
+      );
+
+      expect(result).toMatchObject({
+        ok: true,
+        meta: {
+          approvalRequired: true,
+          skipped: true,
+        },
+      });
+      expect(records).toEqual([
+        {
+          approvalId: "approval_1",
+          executionId: "exec_1",
+          request: expect.objectContaining({
+            action: "apply-patch",
+            subject: "Delete file patch",
+          }),
+        },
+        {
+          approvalId: "approval_1",
+          executionId: "exec_1",
+          result: {
+            decision: "deny",
+            reason: "Not now.",
+          },
+        },
+      ]);
     });
   });
 

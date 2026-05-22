@@ -7,7 +7,7 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint",
-    "build:bin": "bun build --compile --outfile dist/ds-coding-agent index.ts"
+    "build:bin": "bun build --compile --outfile dist/disco index.ts"
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^2.0.35",

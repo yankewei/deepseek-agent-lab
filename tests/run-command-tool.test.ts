@@ -1,5 +1,6 @@
 import { describe, it } from "bun:test";
 import { expect } from "bun:test";
+import type { ApprovalHistoryRecorder } from "../src/approval-history";
 import { createRunCommandTool } from "../src/tools/run-command";
 
 const toolExecutionOptions = {
@@ -56,6 +57,51 @@ describe("runCommandTool", () => {
         skipped: true,
       },
     });
+  });
+
+  it("passes approval records through the command tool", async () => {
+    const records: unknown[] = [];
+    const approvalRecorder: ApprovalHistoryRecorder = {
+      createApprovalId: () => "approval_1",
+      recordRequest: (record) => records.push(record),
+      recordResult: (record) => records.push(record),
+    };
+    const runCommandTool = createRunCommandTool({
+      approvalRecorder,
+      prompt: async () => ({ decision: "approve_once" }),
+      executeRun: async (command, args) => ({
+        stdout: `${command} ${args.join(" ")}`,
+        stderr: "",
+        exitCode: 0,
+      }),
+    });
+
+    const result = await runCommandTool.execute?.(
+      { command: "bun install", reason: "sync dependencies" },
+      toolExecutionOptions,
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      meta: {
+        approvalRequired: true,
+      },
+    });
+    expect(records).toEqual([
+      {
+        approvalId: "approval_1",
+        request: expect.objectContaining({
+          action: "run-command",
+          subject: "bun install",
+        }),
+      },
+      {
+        approvalId: "approval_1",
+        result: {
+          decision: "approve_once",
+        },
+      },
+    ]);
   });
 
   it("reuses approved command prefixes within one tool instance", async () => {
