@@ -1,5 +1,5 @@
-import { execa } from "execa";
 import { type ApprovalPrompt, requestApproval } from "./approval";
+import type { ApprovalHistoryRecorder } from "./approval-history";
 import type { ExecutionTracker } from "./execution-state";
 import {
   evaluateCommandPolicy,
@@ -40,6 +40,7 @@ export async function executeCommandWithPolicy(
   },
   tracker?: ExecutionTracker,
   runtimePolicy?: RuntimeCommandPolicy,
+  approvalRecorder?: ApprovalHistoryRecorder,
 ): Promise<CommandExecutionResult> {
   const reason = input.reason?.trim();
   const record = tracker?.createRecord({
@@ -114,21 +115,37 @@ export async function executeCommandWithPolicy(
           }
           : undefined;
 
-      const approval = await requestApproval(
-        {
-          action: "run-command",
-          title: "Run command requiring approval",
-          subject: decision.command,
-          riskLevel: decision.riskLevel,
-          policyReason: decision.reason,
-          suggestedPolicyAmendment,
-          details: {
-            Command: decision.command,
-            Reason: reason,
-          },
+      const approvalRequest = {
+        action: "run-command",
+        title: "Run command requiring approval",
+        subject: decision.command,
+        riskLevel: decision.riskLevel,
+        policyReason: decision.reason,
+        suggestedPolicyAmendment,
+        details: {
+          Command: decision.command,
+          Reason: reason,
         },
-        prompt,
-      );
+      };
+      const approvalId = approvalRecorder?.createApprovalId();
+
+      if (approvalId) {
+        approvalRecorder?.recordRequest({
+          approvalId,
+          request: approvalRequest,
+          ...(record ? { executionId: record.id } : {}),
+        });
+      }
+
+      const approval = await requestApproval(approvalRequest, prompt);
+
+      if (approvalId) {
+        approvalRecorder?.recordResult({
+          approvalId,
+          result: approval,
+          ...(record ? { executionId: record.id } : {}),
+        });
+      }
 
       if (approval.decision === "deny") {
         updateRecord({

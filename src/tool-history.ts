@@ -95,13 +95,17 @@ export function appendPersistedToolResult(input: {
 export function readPersistedToolCalls(input: {
   text: string;
 }): PersistedToolCall[] {
-  return readJsonl<PersistedToolCall>(input.text);
+  return readJsonl<PersistedToolCall>(input.text).filter((record) =>
+    record.type === "tool_call"
+  );
 }
 
 export function readPersistedToolResults(input: {
   text: string;
 }): PersistedToolResult[] {
-  return readJsonl<PersistedToolResult>(input.text);
+  return readJsonl<PersistedToolResult>(input.text).filter((record) =>
+    record.type === "tool_result"
+  );
 }
 
 export function findCompletedWriteToolCalls(input: {

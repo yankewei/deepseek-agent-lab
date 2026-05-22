@@ -1,3 +1,5 @@
+import { join } from "node:path";
+import { homedir } from "node:os";
 import { stepCountIs, streamText } from "ai";
 import { deepseek } from "@ai-sdk/deepseek";
 import {
@@ -8,8 +10,9 @@ import {
   getStreamText,
 } from "./src/cli-output";
 import { divider, palette } from "./src/terminal";
-import { createExecutionTracker } from "./src/execution-state";
 import { createTools } from "./src/tools/index";
+import { createRunPersistence } from "./src/run-persistence";
+import { getProjectRootDirectory } from "./src/run-metadata";
 
 const userPrompt = process.argv.slice(2).join(" ").trim();
 const debug = process.env.DEBUG === "1";
@@ -19,18 +22,26 @@ if (!userPrompt) {
   process.exit(1);
 }
 
-const executionTracker = createExecutionTracker({
-  onEvent(event) {
+const runPersistence = createRunPersistence({
+  cwd: process.cwd(),
+  rootDir: getProjectRootDirectory({
+    cwd: process.cwd(),
+    rootDir: join(homedir(), ".disco"),
+  }),
+  userPrompt,
+  onExecutionEvent(event) {
     if (debug) {
       console.log(formatExecutionEvent(event));
     }
   },
 });
+const executionTracker = runPersistence.executionTracker;
 
-const result = streamText({
-  model: deepseek("deepseek-v4-pro"),
+try {
+  const result = streamText({
+    model: deepseek("deepseek-v4-pro"),
 
-  system: `
+    system: `
 You are a coding agent.
 
 You can:
@@ -73,43 +84,59 @@ After changing files:
 - if validation was not run, say why
 `,
 
-  prompt: userPrompt,
+    prompt: userPrompt,
 
-  tools: createTools({ executionTracker }),
+    tools: createTools({
+      executionTracker,
+      approvalRecorder: runPersistence.approvalRecorder,
+    }),
 
-  stopWhen: stepCountIs(10),
-});
+    stopWhen: stepCountIs(10),
+  });
 
-let textSectionOpen = false;
-let reasoningSectionOpen = false;
+  let textSectionOpen = false;
+  let reasoningSectionOpen = false;
 
-function closeOpenStreamSection() {
-  if (textSectionOpen || reasoningSectionOpen) {
-    process.stdout.write("\n");
-    textSectionOpen = false;
-    reasoningSectionOpen = false;
+  function closeOpenStreamSection() {
+    if (textSectionOpen || reasoningSectionOpen) {
+      process.stdout.write("\n");
+      textSectionOpen = false;
+      reasoningSectionOpen = false;
+    }
   }
-}
 
-try {
   for await (const event of result.fullStream) {
     switch (event.type) {
       case "start": {
+        runPersistence.persistModelStreamStarted();
+
         if (debug) {
-          console.log(formatSection("🚀 RUN STARTED"));
+          console.log(
+            formatSection(
+              "🚀 RUN STARTED",
+              formatValue({
+                runId: runPersistence.runId,
+                task: userPrompt,
+              }),
+            ),
+          );
         } else {
           const width = divider().length;
           const taskLine = `Task: ${userPrompt}`;
-          const truncated = taskLine.length > width - 4
-            ? taskLine.slice(0, width - 7) + "..."
-            : taskLine;
-          console.log([
-            "",
-            palette.dim(divider()),
-            palette.title("🚀 " + truncated),
-            palette.dim(divider()),
-            "",
-          ].join("\n"));
+          const truncated =
+            taskLine.length > width - 4
+              ? taskLine.slice(0, width - 7) + "..."
+              : taskLine;
+          console.log(
+            [
+              "",
+              palette.dim(divider()),
+              palette.title("🚀 " + truncated),
+              palette.dim(`Run: ${runPersistence.runId}`),
+              palette.dim(divider()),
+              "",
+            ].join("\n"),
+          );
         }
 
         break;
@@ -117,6 +144,10 @@ try {
 
       case "finish": {
         closeOpenStreamSection();
+        runPersistence.persistModelStreamFinished({
+          finishReason: event.finishReason,
+          usage: event.totalUsage,
+        });
 
         if (debug) {
           console.log(
@@ -144,12 +175,14 @@ try {
       }
 
       case "reasoning-delta": {
+        runPersistence.persistModelReasoningDelta({
+          text: getStreamText(event),
+        });
+
         if (!reasoningSectionOpen) {
           closeOpenStreamSection();
           console.log(
-            formatSection(
-              `${palette.dim("[thinking...]")} 🧠 AI THINKING`,
-            ),
+            formatSection(`${palette.dim("[thinking...]")} 🧠 AI THINKING`),
           );
           reasoningSectionOpen = true;
         }
@@ -172,6 +205,10 @@ try {
       }
 
       case "text-delta": {
+        runPersistence.persistModelTextDelta({
+          text: getStreamText(event),
+        });
+
         if (!textSectionOpen) {
           closeOpenStreamSection();
           console.log(formatSection("💬 AI RESPONSE"));
@@ -191,6 +228,11 @@ try {
 
       case "tool-call": {
         closeOpenStreamSection();
+        runPersistence.persistToolCall({
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          input: event.input,
+        });
         console.log(
           formatSection(
             `${palette.dim("[running...]")} 🔧 TOOL CALL: ${event.toolName}`,
@@ -206,6 +248,11 @@ try {
 
       case "tool-result": {
         closeOpenStreamSection();
+        runPersistence.persistToolResult({
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          output: event.output,
+        });
 
         if (debug) {
           console.log(
@@ -224,6 +271,11 @@ try {
 
       case "tool-error": {
         closeOpenStreamSection();
+        runPersistence.persistModelToolError({
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          error: event.error,
+        });
 
         if (debug) {
           console.log(
@@ -242,6 +294,7 @@ try {
 
       case "start-step": {
         closeOpenStreamSection();
+        runPersistence.persistModelStep({ type: "model_step_started" });
 
         if (debug) {
           console.log(formatSection("🧭 AI STEP"));
@@ -252,6 +305,7 @@ try {
 
       case "finish-step": {
         closeOpenStreamSection();
+        runPersistence.persistModelStep({ type: "model_step_finished" });
 
         if (debug) {
           console.log(formatSection("✓ STEP FINISHED"));
@@ -261,7 +315,19 @@ try {
       }
     }
   }
+
+  runPersistence.updateStatus("completed");
 } catch (error) {
+  try {
+    runPersistence.updateStatus("failed");
+  } catch (persistenceError) {
+    const message =
+      persistenceError instanceof Error
+        ? persistenceError.message
+        : String(persistenceError);
+    console.error(formatAgentError({ code: "RUNTIME_ERROR", message }));
+  }
+
   const message = error instanceof Error ? error.message : String(error);
   console.error(formatAgentError({ code: "RUNTIME_ERROR", message }));
   process.exit(1);

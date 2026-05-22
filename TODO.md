@@ -11,12 +11,12 @@ this file stays short and easy to scan.
 
 ## Current Priority
 
-1. Persistent execution event history
-2. Run directory and run metadata
-3. Persist tool calls and tool results
-4. Persist approval requests
-5. Workspace guard
-6. Resume snapshot builder
+1. Unified per-run JSONL timeline. Done.
+2. Persistent execution event history. Done.
+3. Run metadata from `session_meta` and status events. Done.
+4. Persist tool calls, tool results, model output, and approvals. Done.
+5. Workspace identity check. Done.
+6. Resume snapshot builder. Next.
 7. Resume command
 
 See [`docs/resume-roadmap.md`](docs/resume-roadmap.md) for the detailed phase

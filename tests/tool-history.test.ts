@@ -10,9 +10,7 @@ import {
   readPersistedToolResults,
 } from "../src/tool-history";
 import {
-  getExecutionHistoryPath,
-  getToolCallsPath,
-  getToolResultsPath,
+  getRunLogPath,
 } from "../src/run-metadata";
 import {
   createJsonlExecutionHistorySink,
@@ -110,7 +108,7 @@ describe("tool history", () => {
 
   it("writes and reads persisted tool calls as JSONL", async () => {
     await withTempProject(async () => {
-      const filePath = getToolCallsPath({ runId: "run_1" });
+      const filePath = getRunLogPath({ runId: "run_1" });
 
       appendPersistedToolCall({
         filePath,
@@ -148,7 +146,7 @@ describe("tool history", () => {
 
   it("writes and reads persisted tool results as JSONL", async () => {
     await withTempProject(async () => {
-      const filePath = getToolResultsPath({ runId: "run_1" });
+      const filePath = getRunLogPath({ runId: "run_1" });
 
       appendPersistedToolResult({
         filePath,
@@ -204,12 +202,10 @@ describe("tool history", () => {
   it("finds completed write tool calls after reading persisted JSONL", async () => {
     await withTempProject(async () => {
       const runId = "run_1";
-      const toolCallsPath = getToolCallsPath({ runId });
-      const toolResultsPath = getToolResultsPath({ runId });
-      const historyPath = getExecutionHistoryPath({ runId });
+      const runLogPath = getRunLogPath({ runId });
 
       appendPersistedToolCall({
-        filePath: toolCallsPath,
+        filePath: runLogPath,
         record: createPersistedToolCall({
           toolCallId: "call_apply_patch",
           toolName: "applyPatch",
@@ -220,7 +216,7 @@ describe("tool history", () => {
         }),
       });
       appendPersistedToolResult({
-        filePath: toolResultsPath,
+        filePath: runLogPath,
         record: createPersistedToolResult({
           toolCallId: "call_apply_patch",
           toolName: "applyPatch",
@@ -238,7 +234,7 @@ describe("tool history", () => {
           now: () => new Date("2026-01-02T03:04:06.007Z"),
         }),
       });
-      createJsonlExecutionHistorySink({ filePath: historyPath }).append({
+      createJsonlExecutionHistorySink({ filePath: runLogPath }).append({
         type: "execution_state_changed",
         sequence: 1,
         timestamp: "2026-01-02T03:04:06.007Z",
@@ -265,13 +261,13 @@ describe("tool history", () => {
 
       const completedWriteToolCalls = findCompletedWriteToolCalls({
         toolCalls: readPersistedToolCalls({
-          text: await Bun.file(toolCallsPath).text(),
+          text: await Bun.file(runLogPath).text(),
         }),
         toolResults: readPersistedToolResults({
-          text: await Bun.file(toolResultsPath).text(),
+          text: await Bun.file(runLogPath).text(),
         }),
         executionEvents: readJsonlExecutionHistoryEvents({
-          text: await Bun.file(historyPath).text(),
+          text: await Bun.file(runLogPath).text(),
         }),
       });
 

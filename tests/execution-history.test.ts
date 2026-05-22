@@ -8,13 +8,13 @@ import {
   createExecutionTracker,
   executeToolWithState,
 } from "../src/execution-state";
-import { getExecutionHistoryPath } from "../src/run-metadata";
+import { getRunLogPath } from "../src/run-metadata";
 import { withTempProject } from "./helpers/temp-project";
 
 describe("JSONL execution history sink", () => {
   it("appends execution events as valid JSONL in order", async () => {
     await withTempProject(async () => {
-      const filePath = getExecutionHistoryPath({ runId: "run_1" });
+      const filePath = getRunLogPath({ runId: "run_1" });
       let id = 0;
       let timestamp = 0;
 

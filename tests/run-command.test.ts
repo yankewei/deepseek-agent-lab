@@ -1,6 +1,8 @@
 import { describe, it } from "bun:test";
 import { expect } from "bun:test";
+import type { ApprovalHistoryRecorder } from "../src/approval-history";
 import { executeCommandWithPolicy } from "../src/command-executor";
+import { createExecutionTracker } from "../src/execution-state";
 import { createRuntimeCommandPolicy } from "../src/policy";
 
 describe("executeCommandWithPolicy", () => {
@@ -65,6 +67,76 @@ describe("executeCommandWithPolicy", () => {
       approvalRequired: true,
       skipped: true,
     });
+  });
+
+  it("records command approval requests and results", async () => {
+    const records: unknown[] = [];
+    const approvalRecorder: ApprovalHistoryRecorder = {
+      createApprovalId: () => "approval_1",
+      recordRequest: (record) => records.push({
+        type: "request",
+        ...record,
+      }),
+      recordResult: (record) => records.push({
+        type: "result",
+        ...record,
+      }),
+    };
+    const tracker = createExecutionTracker({
+      createId: () => "exec_1",
+    });
+
+    const result = await executeCommandWithPolicy(
+      { command: "bun install", reason: "sync dependencies" },
+      async () => ({
+        decision: "deny",
+        reason: "Not now.",
+      }),
+      async () => {
+        throw new Error("command should not execute");
+      },
+      tracker,
+      undefined,
+      approvalRecorder,
+    );
+
+    expect(result).toEqual({
+      approved: false,
+      approvalRequired: true,
+      executionId: "exec_1",
+      skipped: true,
+    });
+    expect(records).toEqual([
+      {
+        type: "request",
+        approvalId: "approval_1",
+        executionId: "exec_1",
+        request: {
+          action: "run-command",
+          title: "Run command requiring approval",
+          subject: "bun install",
+          riskLevel: "medium",
+          policyReason: "Dependency command requires user approval.",
+          suggestedPolicyAmendment: {
+            type: "allow-command-prefix",
+            prefix: "bun install",
+          },
+          details: {
+            Command: "bun install",
+            Reason: "sync dependencies",
+          },
+        },
+      },
+      {
+        type: "result",
+        approvalId: "approval_1",
+        executionId: "exec_1",
+        result: {
+          decision: "deny",
+          reason: "Not now.",
+        },
+      },
+    ]);
   });
 
   it("runs dependency commands after approval", async () => {

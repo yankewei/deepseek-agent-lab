@@ -22,5 +22,8 @@ export function readJsonlExecutionHistoryEvents(input: {
   return input.text
     .split("\n")
     .filter((line) => line.trim() !== "")
-    .map((line) => JSON.parse(line) as ExecutionHistoryEvent);
+    .map((line) => JSON.parse(line) as { type?: string })
+    .filter((event): event is ExecutionHistoryEvent =>
+      event.type === "execution_state_changed"
+    );
 }

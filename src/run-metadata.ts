@@ -1,5 +1,7 @@
-import { join } from "node:path";
+import { basename, join } from "node:path";
+import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendRunLogEvent, readRunLogEvents } from "./run-event-log";
 
 export type RunStatus = "running" | "completed" | "failed" | "interrupted";
 
@@ -39,38 +41,44 @@ export function assertValidRunId(runId: string) {
   }
 }
 
-export function getRunDirectory(input: { runId: string; rootDir?: string }) {
+function sanitizeProjectName(name: string) {
+  const sanitized = name.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(
+    /^[-.]+|[-.]+$/g,
+    "",
+  );
+
+  return sanitized || "project";
+}
+
+export function createProjectSlug(input: { cwd: string }) {
+  const projectName = sanitizeProjectName(basename(input.cwd));
+  const cwdHash = createHash("sha256").update(input.cwd).digest("hex").slice(
+    0,
+    8,
+  );
+
+  return `${projectName}-${cwdHash}`;
+}
+
+export function getProjectRootDirectory(input: {
+  cwd: string;
+  rootDir?: string;
+}) {
+  return join(
+    input.rootDir ?? ".disco",
+    "projects",
+    createProjectSlug({ cwd: input.cwd }),
+  );
+}
+
+export function getRunsDirectory(input?: { rootDir?: string }) {
+  return join(input?.rootDir ?? ".disco", "runs");
+}
+
+export function getRunLogPath(input: { runId: string; rootDir?: string }) {
   assertValidRunId(input.runId);
 
-  return join(input.rootDir ?? ".disco", "runs", input.runId);
-}
-
-export function getRunMetadataPath(input: {
-  runId: string;
-  rootDir?: string;
-}) {
-  return join(getRunDirectory(input), "run.json");
-}
-
-export function getExecutionHistoryPath(input: {
-  runId: string;
-  rootDir?: string;
-}) {
-  return join(getRunDirectory(input), "execution-events.jsonl");
-}
-
-export function getToolCallsPath(input: {
-  runId: string;
-  rootDir?: string;
-}) {
-  return join(getRunDirectory(input), "tool-calls.jsonl");
-}
-
-export function getToolResultsPath(input: {
-  runId: string;
-  rootDir?: string;
-}) {
-  return join(getRunDirectory(input), "tool-results.jsonl");
+  return join(getRunsDirectory({ rootDir: input.rootDir }), `${input.runId}.jsonl`);
 }
 
 export function createInitialRunMetadata(input: {
@@ -95,21 +103,19 @@ export function writeInitialRunMetadata(input: {
   metadata: RunMetadata;
   rootDir?: string;
 }) {
-  const filePath = getRunMetadataPath({
+  const filePath = getRunLogPath({
     runId: input.metadata.runId,
     rootDir: input.rootDir,
   });
 
-  mkdirSync(
-    getRunDirectory({
-      runId: input.metadata.runId,
-      rootDir: input.rootDir,
-    }),
-    { recursive: true },
-  );
+  mkdirSync(getRunsDirectory({ rootDir: input.rootDir }), { recursive: true });
   writeFileSync(
     filePath,
-    `${JSON.stringify(input.metadata, null, 2)}\n`,
+    `${JSON.stringify({
+      type: "session_meta",
+      timestamp: input.metadata.startedAt,
+      ...input.metadata,
+    })}\n`,
     { flag: "wx" },
   );
 
@@ -120,7 +126,40 @@ export function readRunMetadata(input: {
   runId: string;
   rootDir?: string;
 }): RunMetadata {
-  return JSON.parse(readFileSync(getRunMetadataPath(input), "utf-8"));
+  const events = readRunLogEvents({
+    text: readFileSync(getRunLogPath(input), "utf-8"),
+  });
+  const sessionMeta = events.find((event) =>
+    event.type === "session_meta" && event.runId === input.runId
+  );
+
+  if (!sessionMeta || sessionMeta.type !== "session_meta") {
+    throw new Error(`Run metadata was not found: ${input.runId}`);
+  }
+
+  const metadata: RunMetadata = {
+    runId: sessionMeta.runId,
+    startedAt: sessionMeta.startedAt,
+    cwd: sessionMeta.cwd,
+    userPrompt: sessionMeta.userPrompt,
+    status: sessionMeta.status,
+  };
+
+  for (const event of events) {
+    if (event.type !== "run_status_changed" || event.runId !== input.runId) {
+      continue;
+    }
+
+    metadata.status = event.status;
+
+    if (event.completedAt) {
+      metadata.completedAt = event.completedAt;
+    } else if (!isTerminalRunStatus(event.status)) {
+      delete metadata.completedAt;
+    }
+  }
+
+  return metadata;
 }
 
 function isTerminalRunStatus(status: RunStatus) {
@@ -135,6 +174,7 @@ export function updateRunStatus(input: {
   now?: () => Date;
 }): RunMetadata {
   const now = input.now ?? (() => new Date());
+  const timestamp = now().toISOString();
   const metadata = readRunMetadata({
     runId: input.runId,
     rootDir: input.rootDir,
@@ -143,14 +183,22 @@ export function updateRunStatus(input: {
     ...metadata,
     status: input.status,
     ...(isTerminalRunStatus(input.status)
-      ? { completedAt: now().toISOString() }
+      ? { completedAt: timestamp }
       : {}),
   };
 
-  writeFileSync(
-    getRunMetadataPath({ runId: input.runId, rootDir: input.rootDir }),
-    `${JSON.stringify(updatedMetadata, null, 2)}\n`,
-  );
+  appendRunLogEvent({
+    filePath: getRunLogPath({ runId: input.runId, rootDir: input.rootDir }),
+    event: {
+      type: "run_status_changed",
+      timestamp,
+      runId: input.runId,
+      status: input.status,
+      ...(updatedMetadata.completedAt
+        ? { completedAt: updatedMetadata.completedAt }
+        : {}),
+    },
+  });
 
   return updatedMetadata;
 }

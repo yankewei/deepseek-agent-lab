@@ -1,4 +1,5 @@
 .env
+.disco/
 node_modules/
 dist/
 build/

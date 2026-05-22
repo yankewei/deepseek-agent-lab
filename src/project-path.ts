@@ -1,7 +1,7 @@
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { realpath } from "node:fs/promises";
 
-const blockedWriteFiles = new Set([".env", "pnpm-lock.yaml"]);
+const blockedWriteFiles = new Set([".env", "bun.lock", "pnpm-lock.yaml"]);
 const blockedWriteDirectories = new Set([
   ".git",
   "node_modules",

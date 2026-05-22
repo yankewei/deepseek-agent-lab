@@ -45,96 +45,37 @@ Use small local files first. JSONL is enough for early learning.
 
 ## Required Persisted State
 
-Full resume eventually needs several layers of state.
+Full resume depends on one append-only timeline per run. Metadata, model
+output, execution state, approvals, tool calls, tool results, and status changes
+all belong in that timeline so ordering is unambiguous.
 
-### 1. Run Metadata
+Core event types:
 
-One record per agent run:
+- `session_meta`
+- `model_stream_started`
+- `model_text_delta`
+- `model_reasoning_delta`
+- `tool_call`
+- `tool_result`
+- `model_tool_error`
+- `execution_state_changed`
+- `approval_requested`
+- `approval_resolved`
+- `run_status_changed`
+- `model_stream_finished`
 
-```ts
-{
-  runId: string;
-  startedAt: string;
-  completedAt?: string;
-  cwd: string;
-  userPrompt: string;
-  status: "running" | "completed" | "failed" | "interrupted";
-}
-```
-
-This gives each run a stable identity.
-
-### 2. Conversation State
-
-The model needs enough context to continue:
-
-```text
-system prompt
-user prompt
-model messages
-tool calls
-tool results
-final response draft if any
-```
-
-Without this layer, we can inspect runtime history but cannot truly resume the
-agent loop.
-
-### 3. Execution Events
-
-Every tool or command state change:
+The first event gives each run a stable identity:
 
 ```json
-{"type":"execution_state_changed","sequence":1,"record":{"id":"exec_1","status":"created"}}
-{"type":"execution_state_changed","sequence":2,"record":{"id":"exec_1","status":"running"}}
-{"type":"execution_state_changed","sequence":3,"record":{"id":"exec_1","status":"completed"}}
+{"type":"session_meta","runId":"run_...","startedAt":"...","cwd":"/project","userPrompt":"...","status":"running"}
 ```
 
-This is the factual record of what happened.
+The full `cwd` in `session_meta` is the workspace identity check. Resume stays
+scoped to the current `cwd`; if a run's stored `cwd` differs, the runtime
+reports a mismatch and lets the user decide what to do. Git status and diff
+hash guards are intentionally out of scope for now.
 
-### 4. Approval State
-
-Approvals need their own persisted trail:
-
-```ts
-{
-  executionId: string;
-  request: ApprovalRequest;
-  status: "pending" | "approved" | "denied";
-  result?: ApprovalResult;
-}
-```
-
-This matters when the process exits while waiting for user approval.
-
-### 5. Tool Calls And Tool Results
-
-Tool calls and results need to be persisted so resume does not repeat actions
-that already happened:
-
-```text
-tool-calls.jsonl
-tool-results.jsonl
-```
-
-This is especially important for write tools and command tools.
-
-### 6. Workspace Guard
-
-Resume must check whether the workspace changed after interruption:
-
-```ts
-{
-  cwd: string;
-  gitHead?: string;
-  gitStatus?: string;
-  diffHash?: string;
-}
-```
-
-If the workspace changed, resume should stop and ask the user how to proceed.
-
-### 7. Pending Action
+### Pending Action
 
 The run needs a clear next step:
 
@@ -150,25 +91,22 @@ This prevents blindly restarting from the beginning.
 
 ## Storage Shape
 
-Use one run directory per agent run:
+Use one run log file per agent run. The project-scoped directory is an index,
+not a compatibility requirement with Codex's session directory layout.
 
 ```text
-.disco/
-  runs/
-    <runId>/
-      run.json
-      execution-events.jsonl
-      tool-calls.jsonl
-      tool-results.jsonl
-      approvals.jsonl
-      workspace.json
+$HOME/.disco/projects/<projectSlug>/runs/<runId>.jsonl
 ```
 
-The first phase only needs:
+The library-level default path used by tests is:
 
 ```text
-.disco/runs/<runId>/execution-events.jsonl
+.disco/runs/<runId>.jsonl
 ```
+
+Note: some completed phase notes below describe the older split-file design.
+That design has been superseded by the unified run log above; future phases
+should use the unified log as the source of truth.
 
 ## Phases
 
@@ -231,8 +169,9 @@ Findings:
 - `applyPatch` has a manual approval path for delete patches, so it directly
   creates and updates the execution record before applying or skipping the
   patch.
-- `index.ts` wires `createExecutionTracker` with `onEvent` only for debug CLI
-  output. No persistent sink exists yet.
+- At the start of Phase 1, `index.ts` wired `createExecutionTracker` with
+  `onEvent` only for debug CLI output. Persistent CLI wiring was added later
+  through `src/run-persistence.ts`.
 
 Current event shape:
 
@@ -478,8 +417,8 @@ Implemented:
 - Added an approval-path workflow for delete patches.
 - The approval workflow verifies persisted `applyPatch` state changes:
   `created`, `waiting_for_approval`, `approved`, `running`, and `completed`.
-- CLI runtime wiring is still intentionally deferred until run id and run
-  directory metadata exist in Phase 2.
+- Production CLI runtime wiring now happens through `src/run-persistence.ts`
+  after Phase 3's tool call and result persistence helpers are available.
 
 ##### Step 9. Document The Behavior
 
@@ -939,9 +878,40 @@ Implemented:
   completed write tools.
 - Moved Phase 3 status to `done`.
 
+##### Step 8. Wire Phase 1-3 Persistence Into The CLI
+
+Status: done
+
+Output:
+
+- Add a small runtime persistence helper for CLI wiring.
+- Keep `index.ts` focused on stream handling, not JSONL record construction.
+
+Done when:
+
+- Real CLI runs create
+  `$HOME/.disco/projects/<projectSlug>/runs/<runId>/run.json`.
+- Execution events append to `execution-events.jsonl`.
+- Model tool calls append to `tool-calls.jsonl`.
+- Tool results append to `tool-results.jsonl`.
+- Run status changes to `completed` or `failed`.
+
+Implemented:
+
+- Added `src/run-persistence.ts`.
+- `index.ts` now creates run persistence before calling `streamText`.
+- `index.ts` stores runs under a project slug derived from `cwd`.
+- `tool-call` stream events persist call input.
+- `tool-result` stream events persist output and `meta.executionId` when
+  present.
+- The CLI start banner prints the run id.
+- `.disco/` is ignored by Git for old local run artifacts and test-local
+  artifacts; production CLI runs now write to `$HOME/.disco`.
+- Added `tests/run-persistence.test.ts` for the helper behavior.
+
 ### Phase 4: Persist Approval Requests
 
-Status: not started
+Status: done
 
 Persist approval requests and approval results.
 
@@ -957,40 +927,108 @@ Done when:
 - process interruption during approval can be detected
 - the original approval request can be shown again or resolved safely
 
-### Phase 5: Workspace Guard
+#### Phase 4 Work Breakdown
 
-Status: not started
+##### Step 1. Define Approval History Storage
 
-Record enough workspace state to detect unsafe resume conditions.
+Status: done
 
-Build:
+Output:
 
-- `workspace.json`
-- current git head
-- short git status
-- optional diff hash
+- Add `approvals.jsonl` path mapping.
+- Define persisted approval request and result record shapes.
+- Add JSONL append and read helpers.
 
 Done when:
 
-- resume can detect that files changed since interruption
-- unsafe resume stops before running tools
+- Tests can create deterministic `approval_requested` records.
+- Tests can create deterministic `approval_resolved` records.
+- Tests can write and read approval events as JSONL.
+- Empty approval history text reads back as no events.
+
+Implemented:
+
+- Added `getApprovalsPath` in `src/run-metadata.ts`.
+- Added `src/approval-history.ts`.
+- Added `PersistedApprovalRequest`, `PersistedApprovalResult`, and
+  `PersistedApprovalEvent`.
+- Added `createPersistedApprovalRequest` and `createPersistedApprovalResult`.
+- Added `appendPersistedApprovalEvent` and `readPersistedApprovalEvents`.
+- Added `tests/approval-history.test.ts`.
+
+##### Step 2. Wire Approval History Into Runtime Approval Flow
+
+Status: done
+
+Output:
+
+- Persist command approval requests and results.
+- Persist `applyPatch` delete approval requests and results.
+- Preserve `executionId` so approval records can be joined to execution events.
+
+Done when:
+
+- `runCommand` writes approval request and result events.
+- `applyPatch` delete approval writes approval request and result events.
+- Approval records include `executionId` when an execution record exists.
+
+Implemented:
+
+- Added `ApprovalHistoryRecorder`.
+- `createRunPersistence` now exposes an approval recorder and maps
+  approval events into the unified run log.
+- `createTools` passes the approval recorder into approval-aware tools.
+- `executeCommandWithPolicy` records command approval requests and results.
+- `createApplyPatchTool` records delete patch approval requests and results.
+- Added tests for command approval recording, command tool wiring, delete patch
+  approval recording, and run persistence approval event writes.
+
+### Phase 5: Workspace Identity Check
+
+Status: done
+
+Keep resume scoped to the current project directory.
+
+Build:
+
+- project slug lookup from current `cwd`
+- current project run listing
+- `session_meta.cwd` identity check
+
+Done when:
+
+- resume candidates are loaded from the current cwd's project slug
+- runs whose `session_meta.cwd` does not match the current cwd are rejected
+  with a clear mismatch result
+- no git status, diff hash, or file hash comparison is required
+
+Implemented:
+
+- Added `src/resume-index.ts`.
+- Added `listCurrentProjectRuns`.
+- Added `loadRunForCurrentCwd`.
+- Added `getRunLogPathForCurrentCwd`.
+- Added tests for current-project filtering, empty projects, cwd mismatch, and
+  run log path mapping.
 
 ### Phase 6: Resume Snapshot Builder
 
 Status: not started
 
-Rebuild the latest known state from persisted files.
+Rebuild the latest known state from the unified run log.
 
 Build:
 
-- read execution events
+- read one current-cwd run log
+- filter execution, tool, approval, status, and model events by `type`
 - reconstruct latest `ExecutionRecord` by id
 - identify pending approvals
 - identify completed tool calls
+- reconstruct assistant text and reasoning output needed for resume
 
 Done when:
 
-- a test can write JSONL history and rebuild an in-memory snapshot
+- a test can write one run log and rebuild an in-memory snapshot
 - snapshot clearly reports pending / completed / failed executions
 
 ### Phase 7: Resume Command
@@ -1007,34 +1045,33 @@ bun run resume <runId>
 
 Initial behavior can be conservative:
 
-- load run metadata
+- load metadata from the run's `session_meta` event
 - rebuild execution snapshot
-- check workspace guard
+- check workspace identity
 - report what can and cannot be resumed
 
 Done when:
 
 - user can list or provide a run id
-- resume refuses unsafe workspace states
+- resume refuses runs whose stored cwd does not match the current cwd
 - resume can continue from a pending approval or clearly explain why it cannot
 
 ## Suggested Immediate Next Step
 
-Start with Phase 1.
+Start Phase 6: resume snapshot builder.
 
 Small first task:
 
 ```text
-Add an ExecutionHistorySink interface and a test-only in-memory sink.
+Read one current-cwd run log and derive execution events, tool calls, tool
+results, approval events, status, and model output from it.
 ```
 
-Then add the JSONL sink after the interface is stable.
+Then build a snapshot that reports completed write tools, unresolved approvals,
+and the model output captured before interruption.
 
 ## Open Design Questions
 
 - Should failed history writes fail the agent run or only warn?
-- Should `.disco/` be gitignored?
 - Should run ids be UUIDs or timestamp-based?
-- How much model message history is needed for useful resume?
 - Should pending approval be resumed automatically or always re-confirmed?
-- Should workspace guard compare only Git state or also file hashes?
