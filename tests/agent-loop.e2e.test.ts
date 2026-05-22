@@ -35,10 +35,10 @@ const toolExecutionOptions = {
   messages: [],
 };
 
-import { execa } from "execa";
+import { runCommand } from "../src/run-command";
 
 async function runGit(args: string[]) {
-  const result = await execa("git", args, { reject: false });
+  const result = await runCommand("git", args);
 
   if (result.exitCode !== 0) {
     throw new Error(result.stderr);
