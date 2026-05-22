@@ -1,4 +1,3 @@
-import { execa } from "execa";
 import { type ApprovalPrompt, requestApproval } from "./approval";
 import type { ApprovalHistoryRecorder } from "./approval-history";
 import type { ExecutionTracker } from "./execution-state";
