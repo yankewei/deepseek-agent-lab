@@ -1,5 +1,5 @@
 import { tool } from "ai";
-import { execa } from "execa";
+import { runCommand } from "../run-command";
 import { z } from "zod";
 import { toAgentToolResult } from "../agent-tool-result";
 import {
@@ -17,15 +17,7 @@ type ExecuteGit = (
 
 export async function gitStatus(
   executeGit: ExecuteGit = async (args) => {
-    const result = await execa("git", args, {
-      reject: false,
-    });
-
-    return {
-      stdout: result.stdout,
-      stderr: result.stderr,
-      exitCode: result.exitCode ?? 0,
-    };
+    return await runCommand("git", args);
   },
 ) {
   const result = await executeGit(["status", "--short"]);

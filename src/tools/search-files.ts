@@ -1,5 +1,5 @@
 import { tool } from "ai";
-import { execa } from "execa";
+import { runCommand } from "../run-command";
 import { relative } from "node:path";
 import { z } from "zod";
 import { toAgentToolResult } from "../agent-tool-result";
@@ -68,9 +68,7 @@ export function createSearchFilesTool(
             const projectPath = await resolveExistingProjectPath(path);
 
             // Check ripgrep availability
-            const rgVersion = await execa("rg", ["--version"], {
-              reject: false,
-            });
+            const rgVersion = await runCommand("rg", ["--version"]);
             if (rgVersion.exitCode !== 0) {
               throw new Error(
                 "ripgrep (rg) is required for file search but not found in PATH.\n" +
@@ -93,9 +91,7 @@ export function createSearchFilesTool(
 
             args.push(query, projectPath.absolutePath);
 
-            const result = await execa("rg", args, {
-              reject: false,
-            });
+            const result = await runCommand("rg", args);
 
             if (result.exitCode === 1) {
               return {

@@ -1,4 +1,3 @@
-import "dotenv/config";
 import { stepCountIs, streamText } from "ai";
 import { deepseek } from "@ai-sdk/deepseek";
 import {

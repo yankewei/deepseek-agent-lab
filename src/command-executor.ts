@@ -36,15 +36,7 @@ export async function executeCommandWithPolicy(
   input: { command: string; reason?: string },
   prompt?: ApprovalPrompt,
   executeRun: ExecuteRun = async (command, args) => {
-    const result = await execa(command, args, {
-      reject: false,
-    });
-
-    return {
-      stdout: result.stdout,
-      stderr: result.stderr,
-      exitCode: result.exitCode ?? 0,
-    };
+    return await runCommand(command, args);
   },
   tracker?: ExecutionTracker,
   runtimePolicy?: RuntimeCommandPolicy,
