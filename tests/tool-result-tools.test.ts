@@ -1,17 +1,18 @@
-import { join } from "@std/path";
-import { describe, it } from "@std/testing/bdd";
-import { expect } from "@std/expect";
+import { join } from "node:path";
+import { mkdirSync, rmSync } from "node:fs";
+import { describe, it } from "bun:test";
+import { expect } from "bun:test";
 import {
   applyPatchTool,
   createApplyPatchTool,
-} from "../src/tools/apply-patch.ts";
-import { editFileTool } from "../src/tools/edit-file.ts";
-import { getDiffTool } from "../src/tools/get-diff.ts";
-import { createGitStatusTool } from "../src/tools/git-status.ts";
-import { listFilesTool } from "../src/tools/list-files.ts";
-import { readFileTool } from "../src/tools/read-file.ts";
-import { searchFilesTool } from "../src/tools/search-files.ts";
-import { withTempProject } from "./helpers/temp-project.ts";
+} from "../src/tools/apply-patch";
+import { editFileTool } from "../src/tools/edit-file";
+import { getDiffTool } from "../src/tools/get-diff";
+import { createGitStatusTool } from "../src/tools/git-status";
+import { listFilesTool } from "../src/tools/list-files";
+import { readFileTool } from "../src/tools/read-file";
+import { searchFilesTool } from "../src/tools/search-files";
+import { withTempProject } from "./helpers/temp-project";
 
 const toolExecutionOptions = {
   toolCallId: "call_1",
@@ -21,8 +22,8 @@ const toolExecutionOptions = {
 describe("tool AgentToolResult wrappers", () => {
   it("wraps listFiles results", async () => {
     await withTempProject(async () => {
-      await Deno.mkdir("src");
-      await Deno.writeTextFile("src/index.ts", "export const value = 1;\n");
+      mkdirSync("src");
+      await Bun.write("src/index.ts", "export const value = 1;\n");
 
       const result = await listFilesTool.execute?.(
         { path: ".", maxDepth: 2 },
@@ -40,7 +41,7 @@ describe("tool AgentToolResult wrappers", () => {
 
   it("wraps readFile results", async () => {
     await withTempProject(async () => {
-      await Deno.writeTextFile("README.md", "hello\n");
+      await Bun.write("README.md", "hello\n");
 
       const result = await readFileTool.execute?.(
         { path: "README.md" },
@@ -58,7 +59,7 @@ describe("tool AgentToolResult wrappers", () => {
 
   it("wraps searchFiles results", async () => {
     await withTempProject(async () => {
-      await Deno.writeTextFile("index.ts", "const agent = true;\n");
+      await Bun.write("index.ts", "const agent = true;\n");
 
       const result = await searchFilesTool.execute?.(
         {
@@ -123,7 +124,7 @@ describe("tool AgentToolResult wrappers", () => {
 
   it("wraps editFile results", async () => {
     await withTempProject(async () => {
-      await Deno.writeTextFile("index.ts", "const name = 'agent';\n");
+      await Bun.write("index.ts", "const name = 'agent';\n");
 
       const result = await editFileTool.execute?.(
         {
@@ -168,7 +169,7 @@ describe("tool AgentToolResult wrappers", () => {
 
   it("does not request approval for update-only patches", async () => {
     await withTempProject(async () => {
-      await Deno.writeTextFile("index.ts", "const value = 1;\n");
+      await Bun.write("index.ts", "const value = 1;\n");
       const applyPatchTool = createApplyPatchTool({
         prompt: async () => {
           throw new Error("approval should not be requested");
@@ -194,13 +195,13 @@ describe("tool AgentToolResult wrappers", () => {
           dryRun: false,
         },
       });
-      expect(await Deno.readTextFile("index.ts")).toBe("const value = 2;\n");
+      expect(await Bun.file("index.ts").text()).toBe("const value = 2;\n");
     });
   });
 
   it("skips delete patches when approval is denied", async () => {
     await withTempProject(async () => {
-      await Deno.writeTextFile("old.txt", "remove me\n");
+      await Bun.write("old.txt", "remove me\n");
       const applyPatchTool = createApplyPatchTool({
         prompt: async (request) => {
           expect(request).toMatchObject({
@@ -234,13 +235,13 @@ describe("tool AgentToolResult wrappers", () => {
           skipped: true,
         },
       });
-      expect(await Deno.readTextFile("old.txt")).toBe("remove me\n");
+      expect(await Bun.file("old.txt").text()).toBe("remove me\n");
     });
   });
 
   it("applies delete patches after approval", async () => {
     await withTempProject(async () => {
-      await Deno.writeTextFile("old.txt", "remove me\n");
+      await Bun.write("old.txt", "remove me\n");
       const applyPatchTool = createApplyPatchTool({
         prompt: async () => ({ decision: "approve_once" }),
       });
@@ -264,8 +265,8 @@ describe("tool AgentToolResult wrappers", () => {
           approvalRequired: true,
         },
       });
-      await expect(Deno.readTextFile("old.txt")).rejects.toThrow(
-        /No such file/,
+      await expect(Bun.file("old.txt").text()).rejects.toThrow(
+        /ENOENT/,
       );
     });
   });
@@ -273,7 +274,7 @@ describe("tool AgentToolResult wrappers", () => {
   it("wraps tool failures", async () => {
     await withTempProject(async (projectRoot) => {
       const outsideFile = join(projectRoot, "..", "outside.txt");
-      await Deno.writeTextFile(outsideFile, "outside\n");
+      await Bun.write(outsideFile, "outside\n");
 
       try {
         const result = await readFileTool.execute?.(
@@ -289,7 +290,7 @@ describe("tool AgentToolResult wrappers", () => {
           },
         });
       } finally {
-        await Deno.remove(outsideFile);
+        rmSync(outsideFile);
       }
     });
   });

@@ -1,6 +1,6 @@
-import { describe, it } from "@std/testing/bdd";
-import { expect } from "@std/expect";
-import { getDiff } from "../src/tools/get-diff.ts";
+import { describe, it } from "bun:test";
+import { expect } from "bun:test";
+import { getDiff } from "../src/tools/get-diff";
 
 describe("getDiff", () => {
   it("maps stat mode to git diff --stat", async () => {

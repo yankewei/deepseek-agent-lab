@@ -1,20 +1,21 @@
 import { tool } from "ai";
 
 import { z } from "zod";
-import { type ApprovalPrompt, requestApproval } from "../approval.ts";
+import { type ApprovalPrompt, requestApproval } from "../approval";
 import {
   type AgentToolResult,
   okAgentToolResult,
   toAgentToolResult,
-} from "../agent-tool-result.ts";
+} from "../agent-tool-result";
 import {
   executeToolWithState,
   type ExecutionTracker,
-} from "../execution-state.ts";
+} from "../execution-state";
 import {
   resolveNewWritableProjectPath,
   resolveWritableProjectPath,
-} from "../project-path.ts";
+} from "../project-path";
+import { closeSync, openSync, rmSync, writeSync } from "node:fs";
 
 type AddOperation = {
   type: "add";
@@ -247,7 +248,7 @@ async function preparePatchOperations(
       continue;
     }
 
-    let updatedText = await Deno.readTextFile(projectPath.absolutePath);
+    let updatedText = await Bun.file(projectPath.absolutePath).text();
 
     for (const hunk of operation.hunks) {
       const occurrences = countOccurrences(updatedText, hunk.oldText);
@@ -292,21 +293,18 @@ export async function applyPatch(input: { patch: string; dryRun?: boolean }) {
 
   for (const operation of preparedOperations) {
     if (operation.type === "add") {
-      const file = await Deno.open(operation.projectPath.absolutePath, {
-        write: true,
-        createNew: true,
-      });
-      await file.write(new TextEncoder().encode(operation.content));
-      file.close();
+      const fd = openSync(operation.projectPath.absolutePath, "wx");
+      writeSync(fd, operation.content);
+      closeSync(fd);
       continue;
     }
 
     if (operation.type === "delete") {
-      await Deno.remove(operation.projectPath.absolutePath);
+      rmSync(operation.projectPath.absolutePath);
       continue;
     }
 
-    await Deno.writeTextFile(
+    await Bun.write(
       operation.projectPath.absolutePath,
       operation.updatedText,
     );

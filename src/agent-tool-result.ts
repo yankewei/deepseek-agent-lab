@@ -1,5 +1,5 @@
-import type { AgentError } from "./errors.ts";
-import { classifyToolError } from "./errors.ts";
+import type { AgentError } from "./errors";
+import { classifyToolError } from "./errors";
 
 export type AgentToolResultMeta = {
   executionId?: string;

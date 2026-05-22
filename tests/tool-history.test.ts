@@ -1,5 +1,5 @@
-import { describe, it } from "@std/testing/bdd";
-import { expect } from "@std/expect";
+import { describe, it } from "bun:test";
+import { expect } from "bun:test";
 import {
   appendPersistedToolCall,
   appendPersistedToolResult,
@@ -8,17 +8,17 @@ import {
   findCompletedWriteToolCalls,
   readPersistedToolCalls,
   readPersistedToolResults,
-} from "../src/tool-history.ts";
+} from "../src/tool-history";
 import {
   getExecutionHistoryPath,
   getToolCallsPath,
   getToolResultsPath,
-} from "../src/run-metadata.ts";
+} from "../src/run-metadata";
 import {
   createJsonlExecutionHistorySink,
   readJsonlExecutionHistoryEvents,
-} from "../src/execution-history.ts";
-import { withTempProject } from "./helpers/temp-project.ts";
+} from "../src/execution-history";
+import { withTempProject } from "./helpers/temp-project";
 
 describe("tool history", () => {
   it("creates persisted tool call records with stable schema", () => {
@@ -132,7 +132,7 @@ describe("tool history", () => {
       });
 
       const records = readPersistedToolCalls({
-        text: await Deno.readTextFile(filePath),
+        text: await Bun.file(filePath).text(),
       });
 
       expect(records.map((record) => record.toolCallId)).toEqual([
@@ -171,7 +171,7 @@ describe("tool history", () => {
       });
 
       const records = readPersistedToolResults({
-        text: await Deno.readTextFile(filePath),
+        text: await Bun.file(filePath).text(),
       });
 
       expect(records).toEqual([
@@ -265,13 +265,13 @@ describe("tool history", () => {
 
       const completedWriteToolCalls = findCompletedWriteToolCalls({
         toolCalls: readPersistedToolCalls({
-          text: await Deno.readTextFile(toolCallsPath),
+          text: await Bun.file(toolCallsPath).text(),
         }),
         toolResults: readPersistedToolResults({
-          text: await Deno.readTextFile(toolResultsPath),
+          text: await Bun.file(toolResultsPath).text(),
         }),
         executionEvents: readJsonlExecutionHistoryEvents({
-          text: await Deno.readTextFile(historyPath),
+          text: await Bun.file(historyPath).text(),
         }),
       });
 

@@ -1,11 +1,11 @@
 const blockedShellTokens = ["&&", "||", ";", "|", ">", "<", "`", "$("];
 const allowedCommands = new Set([
   "pwd",
-  "deno task test",
-  "deno task build:bin",
-  "deno --version",
+  "bun test",
+  "bun run build:bin",
+  "bun --version",
 ]);
-const approvableCommandPrefixes = ["deno install", "deno add", "deno remove"];
+const approvableCommandPrefixes = ["bun install", "bun add", "bun remove"];
 
 export type RiskLevel = "low" | "medium" | "high";
 

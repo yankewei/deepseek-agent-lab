@@ -85,7 +85,7 @@ Write tools additionally block:
 - `dist/`
 - `build/`
 - `.next/`
-- `deno.lock`
+- `bun.lock`
 
 This is separate from approval. Path validation answers:
 
@@ -120,7 +120,7 @@ Policy decisions have three useful fields:
 - `code`: stable machine-readable reason
 - `reason`: human-readable explanation
 
-Dependency commands such as `deno install` and `deno add` are useful, but not
+Dependency commands such as `bun install` and `bun add` are useful, but not
 safe enough to run silently. They use approval.
 
 ## Patch Flow

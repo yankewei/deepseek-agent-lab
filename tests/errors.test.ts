@@ -1,10 +1,10 @@
-import { describe, it } from "@std/testing/bdd";
-import { expect } from "@std/expect";
+import { describe, it } from "bun:test";
+import { expect } from "bun:test";
 import {
   classifyCommandExecutionError,
   createAgentError,
   getErrorMessage,
-} from "../src/errors.ts";
+} from "../src/errors";
 
 describe("Agent errors", () => {
   it("creates structured agent errors", () => {
@@ -32,13 +32,13 @@ describe("Agent errors", () => {
     expect(
       classifyCommandExecutionError(
         new Error(
-          "Shell operator is not allowed in command: deno task test && cat .env",
+          "Shell operator is not allowed in command: bun test && cat .env",
         ),
       ),
     ).toEqual({
       code: "POLICY_FORBIDDEN",
       message:
-        "Shell operator is not allowed in command: deno task test && cat .env",
+        "Shell operator is not allowed in command: bun test && cat .env",
     });
   });
 
@@ -46,12 +46,12 @@ describe("Agent errors", () => {
     expect(
       classifyCommandExecutionError(
         new Error(
-          "Approval reason is required for command: deno add npm:vitest",
+          "Approval reason is required for command: bun add npm:vitest",
         ),
       ),
     ).toEqual({
       code: "APPROVAL_REASON_REQUIRED",
-      message: "Approval reason is required for command: deno add npm:vitest",
+      message: "Approval reason is required for command: bun add npm:vitest",
     });
   });
 

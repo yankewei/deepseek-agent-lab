@@ -4,15 +4,15 @@ import {
   type AgentToolResult,
   errorAgentToolResult,
   okAgentToolResult,
-} from "../agent-tool-result.ts";
+} from "../agent-tool-result";
 import {
   executeCommandWithPolicy,
   type ExecuteRun,
-} from "../command-executor.ts";
-import type { ExecutionTracker } from "../execution-state.ts";
-import type { ApprovalPrompt } from "../approval.ts";
-import { classifyCommandExecutionError } from "../errors.ts";
-import { createRuntimeCommandPolicy } from "../policy.ts";
+} from "../command-executor";
+import type { ExecutionTracker } from "../execution-state";
+import type { ApprovalPrompt } from "../approval";
+import { classifyCommandExecutionError } from "../errors";
+import { createRuntimeCommandPolicy } from "../policy";
 
 type RunCommandToolData =
   | {

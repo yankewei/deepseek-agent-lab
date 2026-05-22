@@ -2,20 +2,22 @@ import "dotenv/config";
 import { stepCountIs, streamText } from "ai";
 import { deepseek } from "@ai-sdk/deepseek";
 import {
+  formatAgentError,
   formatExecutionEvent,
   formatSection,
   formatValue,
   getStreamText,
-} from "./src/cli-output.ts";
-import { createExecutionTracker } from "./src/execution-state.ts";
-import { createTools } from "./src/tools/index.ts";
+} from "./src/cli-output";
+import { divider, palette } from "./src/terminal";
+import { createExecutionTracker } from "./src/execution-state";
+import { createTools } from "./src/tools/index";
 
-const userPrompt = Deno.args.join(" ").trim();
-const debug = Deno.env.get("DEBUG") === "1";
+const userPrompt = process.argv.slice(2).join(" ").trim();
+const debug = process.env.DEBUG === "1";
 
 if (!userPrompt) {
-  console.error('Usage: deno task start "请分析当前项目"');
-  Deno.exit(1);
+  console.error('Usage: bun run start "请分析当前项目"');
+  process.exit(1);
 }
 
 const executionTracker = createExecutionTracker({
@@ -60,8 +62,8 @@ Use applyPatch for multi-file changes, then run validation when appropriate.
 Use gitStatus after edits to inspect the working tree state.
 Use getDiff after gitStatus to inspect changed files before summarizing.
 Use runCommand for command execution.
-runCommand can run these exact commands without approval: pwd, deno task test, deno task build:bin, deno --version.
-runCommand asks for approval before dependency changes such as deno install, deno add, or deno remove; include a clear reason.
+runCommand can run these exact commands without approval: pwd, bun test, bun run build:bin, bun --version.
+runCommand asks for approval before dependency changes such as bun install, bun add, or bun remove; include a clear reason.
 If a command is blocked, explain what you were trying to learn and choose a safer command.
 
 After changing files:
@@ -84,17 +86,31 @@ let reasoningSectionOpen = false;
 
 async function closeOpenStreamSection() {
   if (textSectionOpen || reasoningSectionOpen) {
-    await Deno.stdout.write(new TextEncoder().encode("\n"));
+    process.stdout.write("\n");
     textSectionOpen = false;
     reasoningSectionOpen = false;
   }
 }
 
+try {
 for await (const event of result.fullStream) {
   switch (event.type) {
     case "start": {
       if (debug) {
         console.log(formatSection("🚀 RUN STARTED"));
+      } else {
+        const width = divider().length;
+        const taskLine = `Task: ${userPrompt}`;
+        const truncated = taskLine.length > width - 4
+          ? taskLine.slice(0, width - 7) + "..."
+          : taskLine;
+        console.log([
+          "",
+          palette.dim(divider()),
+          palette.title("🚀 " + truncated),
+          palette.dim(divider()),
+          "",
+        ].join("\n"));
       }
 
       break;
@@ -113,6 +129,9 @@ for await (const event of result.fullStream) {
             }),
           ),
         );
+      } else {
+        const parts: string[] = [`finishReason: ${event.finishReason}`];
+        console.log(palette.dim(`🏁 Finished · ${parts.join(" · ")}`));
       }
 
       break;
@@ -127,11 +146,11 @@ for await (const event of result.fullStream) {
     case "reasoning-delta": {
       if (!reasoningSectionOpen) {
         await closeOpenStreamSection();
-        console.log(formatSection("🧠 AI THINKING"));
+        console.log(formatSection(`${palette.dim("[thinking...]")} 🧠 AI THINKING`));
         reasoningSectionOpen = true;
       }
 
-      await Deno.stdout.write(new TextEncoder().encode(getStreamText(event)));
+      process.stdout.write(getStreamText(event));
 
       break;
     }
@@ -155,7 +174,7 @@ for await (const event of result.fullStream) {
         textSectionOpen = true;
       }
 
-      await Deno.stdout.write(new TextEncoder().encode(getStreamText(event)));
+      process.stdout.write(getStreamText(event));
 
       break;
     }
@@ -170,7 +189,7 @@ for await (const event of result.fullStream) {
       await closeOpenStreamSection();
       console.log(
         formatSection(
-          `🔧 TOOL CALL: ${event.toolName}`,
+          `${palette.dim("[running...]")} 🔧 TOOL CALL: ${event.toolName}`,
           formatValue({
             input: event.input,
             toolCallId: event.toolCallId,
@@ -237,4 +256,9 @@ for await (const event of result.fullStream) {
       break;
     }
   }
+}
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(formatAgentError({ code: "RUNTIME_ERROR", message }));
+  process.exit(1);
 }

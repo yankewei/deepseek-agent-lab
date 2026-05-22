@@ -1,12 +1,13 @@
 import { tool } from "ai";
-import { join, relative } from "@std/path";
+import { join, relative } from "node:path";
+import { readdir } from "node:fs/promises";
 import { z } from "zod";
-import { toAgentToolResult } from "../agent-tool-result.ts";
+import { toAgentToolResult } from "../agent-tool-result";
 import {
   executeToolWithState,
   type ExecutionTracker,
-} from "../execution-state.ts";
-import { resolveExistingProjectPath } from "../project-path.ts";
+} from "../execution-state";
+import { resolveExistingProjectPath } from "../project-path";
 
 const ignoredDirectories = new Set([
   ".git",
@@ -25,17 +26,17 @@ async function listProjectFiles(directory: string, maxDepth: number) {
       return;
     }
 
-    const entries = await Array.fromAsync(Deno.readDir(currentDirectory));
+    const entries = await readdir(currentDirectory, { withFileTypes: true });
 
     for (const entry of entries) {
-      if (entry.isDirectory && ignoredDirectories.has(entry.name)) {
+      if (entry.isDirectory() && ignoredDirectories.has(entry.name)) {
         continue;
       }
 
       const fullPath = join(currentDirectory, entry.name);
       const rel = relative(projectPath.root, fullPath);
 
-      if (entry.isDirectory) {
+      if (entry.isDirectory()) {
         files.push(`${rel}/`);
         await walk(fullPath, depth + 1);
       } else {

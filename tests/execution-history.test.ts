@@ -1,15 +1,15 @@
-import { describe, it } from "@std/testing/bdd";
-import { expect } from "@std/expect";
+import { describe, it } from "bun:test";
+import { expect } from "bun:test";
 import {
   createJsonlExecutionHistorySink,
   readJsonlExecutionHistoryEvents,
-} from "../src/execution-history.ts";
+} from "../src/execution-history";
 import {
   createExecutionTracker,
   executeToolWithState,
-} from "../src/execution-state.ts";
-import { getExecutionHistoryPath } from "../src/run-metadata.ts";
-import { withTempProject } from "./helpers/temp-project.ts";
+} from "../src/execution-state";
+import { getExecutionHistoryPath } from "../src/run-metadata";
+import { withTempProject } from "./helpers/temp-project";
 
 describe("JSONL execution history sink", () => {
   it("appends execution events as valid JSONL in order", async () => {
@@ -31,7 +31,7 @@ describe("JSONL execution history sink", () => {
       });
 
       const events = readJsonlExecutionHistoryEvents({
-        text: await Deno.readTextFile(filePath),
+        text: await Bun.file(filePath).text(),
       });
 
       expect(events.map((event) => event.sequence)).toEqual([1, 2, 3]);

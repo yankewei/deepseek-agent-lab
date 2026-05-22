@@ -14,7 +14,7 @@ actions.
 The future command might look like:
 
 ```bash
-deno task resume <runId>
+bun run resume <runId>
 ```
 
 The resumed run should be able to answer:
@@ -1002,7 +1002,7 @@ Add a user-facing resume command.
 Build:
 
 ```bash
-deno task resume <runId>
+bun run resume <runId>
 ```
 
 Initial behavior can be conservative:

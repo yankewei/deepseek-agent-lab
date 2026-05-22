@@ -1,4 +1,5 @@
-import { join } from "@std/path";
+import { join } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 export type RunStatus = "running" | "completed" | "failed" | "interrupted";
 
@@ -99,17 +100,17 @@ export function writeInitialRunMetadata(input: {
     rootDir: input.rootDir,
   });
 
-  Deno.mkdirSync(
+  mkdirSync(
     getRunDirectory({
       runId: input.metadata.runId,
       rootDir: input.rootDir,
     }),
     { recursive: true },
   );
-  Deno.writeTextFileSync(
+  writeFileSync(
     filePath,
     `${JSON.stringify(input.metadata, null, 2)}\n`,
-    { createNew: true },
+    { flag: "wx" },
   );
 
   return filePath;
@@ -119,7 +120,7 @@ export function readRunMetadata(input: {
   runId: string;
   rootDir?: string;
 }): RunMetadata {
-  return JSON.parse(Deno.readTextFileSync(getRunMetadataPath(input)));
+  return JSON.parse(readFileSync(getRunMetadataPath(input), "utf-8"));
 }
 
 function isTerminalRunStatus(status: RunStatus) {
@@ -146,7 +147,7 @@ export function updateRunStatus(input: {
       : {}),
   };
 
-  Deno.writeTextFileSync(
+  writeFileSync(
     getRunMetadataPath({ runId: input.runId, rootDir: input.rootDir }),
     `${JSON.stringify(updatedMetadata, null, 2)}\n`,
   );
