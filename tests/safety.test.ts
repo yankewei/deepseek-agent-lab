@@ -1,30 +1,30 @@
-import { describe, it } from "@std/testing/bdd";
-import { expect } from "@std/expect";
+import { describe, it } from "bun:test";
+import { expect } from "bun:test";
 import {
   createRuntimeCommandPolicy,
   evaluateCommandPolicy,
-} from "../src/policy.ts";
+} from "../src/policy";
 
 describe("command policy", () => {
   it("classifies commands before execution", () => {
-    expect(evaluateCommandPolicy(" deno   task   test ")).toEqual({
+    expect(evaluateCommandPolicy(" bun   test ")).toEqual({
       type: "allow",
       code: "LOW_RISK_COMMAND_ALLOWED",
-      command: "deno task test",
+      command: "bun test",
       reason: "Known low-risk project command.",
     });
 
-    expect(evaluateCommandPolicy("deno task build:bin")).toEqual({
+    expect(evaluateCommandPolicy("bun run build:bin")).toEqual({
       type: "allow",
       code: "LOW_RISK_COMMAND_ALLOWED",
-      command: "deno task build:bin",
+      command: "bun run build:bin",
       reason: "Known low-risk project command.",
     });
 
-    expect(evaluateCommandPolicy("deno add npm:vitest")).toEqual({
+    expect(evaluateCommandPolicy("bun add npm:vitest")).toEqual({
       type: "prompt",
       code: "DEPENDENCY_CHANGE_REQUIRES_APPROVAL",
-      command: "deno add npm:vitest",
+      command: "bun add npm:vitest",
       reason: "Dependency command requires user approval.",
       riskLevel: "medium",
     });
@@ -38,39 +38,39 @@ describe("command policy", () => {
   });
 
   it("forbids shell operators before command classification", () => {
-    expect(evaluateCommandPolicy("deno task test && cat .env")).toEqual({
+    expect(evaluateCommandPolicy("bun test && cat .env")).toEqual({
       type: "forbidden",
       code: "SHELL_OPERATOR_BLOCKED",
-      command: "deno task test && cat .env",
+      command: "bun test && cat .env",
       reason:
-        "Shell operator is not allowed in command: deno task test && cat .env",
+        "Shell operator is not allowed in command: bun test && cat .env",
     });
   });
 
   it("classifies dependency changes as approvable commands", () => {
-    expect(evaluateCommandPolicy("deno install").type).toBe("prompt");
-    expect(evaluateCommandPolicy(" deno   add   npm:vitest ")).toMatchObject({
+    expect(evaluateCommandPolicy("bun install").type).toBe("prompt");
+    expect(evaluateCommandPolicy(" bun   add   npm:vitest ")).toMatchObject({
       type: "prompt",
       code: "DEPENDENCY_CHANGE_REQUIRES_APPROVAL",
-      command: "deno add npm:vitest",
+      command: "bun add npm:vitest",
       riskLevel: "medium",
     });
-    expect(evaluateCommandPolicy("deno remove vitest").type).toBe("prompt");
+    expect(evaluateCommandPolicy("bun remove vitest").type).toBe("prompt");
   });
 
   it("stores process-local allowed command prefixes", () => {
     const runtimePolicy = createRuntimeCommandPolicy();
 
-    expect(runtimePolicy.isCommandAllowedByPrefix("deno add npm:zod")).toBe(
+    expect(runtimePolicy.isCommandAllowedByPrefix("bun add npm:zod")).toBe(
       false,
     );
 
-    runtimePolicy.allowCommandPrefix(" deno   add ");
+    runtimePolicy.allowCommandPrefix(" bun   add ");
 
-    expect(runtimePolicy.isCommandAllowedByPrefix("deno add npm:zod")).toBe(
+    expect(runtimePolicy.isCommandAllowedByPrefix("bun add npm:zod")).toBe(
       true,
     );
-    expect(runtimePolicy.isCommandAllowedByPrefix("deno remove zod")).toBe(
+    expect(runtimePolicy.isCommandAllowedByPrefix("bun remove zod")).toBe(
       false,
     );
   });

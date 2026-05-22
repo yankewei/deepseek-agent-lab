@@ -1,17 +1,17 @@
-import { describe, it } from "@std/testing/bdd";
-import { expect } from "@std/expect";
+import { describe, it } from "bun:test";
+import { expect } from "bun:test";
 import {
   createExecutionTracker,
   type ExecutionEvent,
-} from "../src/execution-state.ts";
-import { createApplyPatchTool } from "../src/tools/apply-patch.ts";
-import { createEditFileTool } from "../src/tools/edit-file.ts";
-import { createGetDiffTool } from "../src/tools/get-diff.ts";
-import { createGitStatusTool } from "../src/tools/git-status.ts";
-import { createListFilesTool } from "../src/tools/list-files.ts";
-import { createReadFileTool } from "../src/tools/read-file.ts";
-import { createSearchFilesTool } from "../src/tools/search-files.ts";
-import { withTempProject } from "./helpers/temp-project.ts";
+} from "../src/execution-state";
+import { createApplyPatchTool } from "../src/tools/apply-patch";
+import { createEditFileTool } from "../src/tools/edit-file";
+import { createGetDiffTool } from "../src/tools/get-diff";
+import { createGitStatusTool } from "../src/tools/git-status";
+import { createListFilesTool } from "../src/tools/list-files";
+import { createReadFileTool } from "../src/tools/read-file";
+import { createSearchFilesTool } from "../src/tools/search-files";
+import { withTempProject } from "./helpers/temp-project";
 
 const toolExecutionOptions = {
   toolCallId: "call_1",
@@ -36,7 +36,7 @@ describe("tool execution state tracking", () => {
       const tracker = createTracker(events);
       const listFilesTool = createListFilesTool({ executionTracker: tracker });
 
-      await Deno.writeTextFile("index.ts", "export const value = 1;\n");
+      await Bun.write("index.ts", "export const value = 1;\n");
 
       const result = await listFilesTool.execute?.(
         { path: ".", maxDepth: 1 },
@@ -99,7 +99,7 @@ describe("tool execution state tracking", () => {
         executionTracker: tracker,
       });
 
-      await Deno.writeTextFile("index.ts", "const agent = true;\n");
+      await Bun.write("index.ts", "const agent = true;\n");
 
       const result = await searchFilesTool.execute?.(
         {
@@ -195,7 +195,7 @@ describe("tool execution state tracking", () => {
       const tracker = createTracker(events);
       const editFileTool = createEditFileTool({ executionTracker: tracker });
 
-      await Deno.writeTextFile("index.ts", "const name = 'agent';\n");
+      await Bun.write("index.ts", "const name = 'agent';\n");
 
       const result = await editFileTool.execute?.(
         {
@@ -267,7 +267,7 @@ describe("tool execution state tracking", () => {
         },
       });
 
-      await Deno.writeTextFile("index.ts", "const value = 1;\n");
+      await Bun.write("index.ts", "const value = 1;\n");
 
       const result = await applyPatchTool.execute?.(
         {
@@ -294,7 +294,7 @@ describe("tool execution state tracking", () => {
         "completed",
       ]);
       expect(events.at(-1)?.record.toolName).toBe("applyPatch");
-      expect(await Deno.readTextFile("index.ts")).toBe("const value = 2;\n");
+      expect(await Bun.file("index.ts").text()).toBe("const value = 2;\n");
     });
   });
 
@@ -310,7 +310,7 @@ describe("tool execution state tracking", () => {
         }),
       });
 
-      await Deno.writeTextFile("old.txt", "remove me\n");
+      await Bun.write("old.txt", "remove me\n");
 
       const result = await applyPatchTool.execute?.(
         {
@@ -340,7 +340,7 @@ describe("tool execution state tracking", () => {
         toolName: "applyPatch",
         error: "Not now.",
       });
-      expect(await Deno.readTextFile("old.txt")).toBe("remove me\n");
+      expect(await Bun.file("old.txt").text()).toBe("remove me\n");
     });
   });
 
@@ -353,7 +353,7 @@ describe("tool execution state tracking", () => {
         prompt: async () => ({ decision: "approve_once" }),
       });
 
-      await Deno.writeTextFile("old.txt", "remove me\n");
+      await Bun.write("old.txt", "remove me\n");
 
       const result = await applyPatchTool.execute?.(
         {
@@ -386,8 +386,8 @@ describe("tool execution state tracking", () => {
         kind: "tool",
         toolName: "applyPatch",
       });
-      await expect(Deno.readTextFile("old.txt")).rejects.toThrow(
-        /No such file/,
+      await expect(Bun.file("old.txt").text()).rejects.toThrow(
+        /ENOENT/,
       );
     });
   });

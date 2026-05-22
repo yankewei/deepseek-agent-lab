@@ -1,11 +1,11 @@
-import { describe, it } from "@std/testing/bdd";
-import { expect } from "@std/expect";
+import { describe, it } from "bun:test";
+import { expect } from "bun:test";
 import {
   formatExecutionEvent,
   formatSection,
   getStreamText,
-} from "../src/cli-output.ts";
-import type { ExecutionEvent } from "../src/execution-state.ts";
+} from "../src/cli-output";
+import type { ExecutionEvent } from "../src/execution-state";
 
 describe("CLI output formatting", () => {
   it("formats titled sections", () => {

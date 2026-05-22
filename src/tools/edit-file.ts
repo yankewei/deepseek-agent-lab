@@ -1,11 +1,11 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { toAgentToolResult } from "../agent-tool-result.ts";
+import { toAgentToolResult } from "../agent-tool-result";
 import {
   executeToolWithState,
   type ExecutionTracker,
-} from "../execution-state.ts";
-import { resolveWritableProjectPath } from "../project-path.ts";
+} from "../execution-state";
+import { resolveWritableProjectPath } from "../project-path";
 
 function countOccurrences(text: string, search: string) {
   let count = 0;
@@ -27,7 +27,7 @@ export async function editFile(
   input: { path: string; oldText: string; newText: string },
 ) {
   const projectPath = await resolveWritableProjectPath(input.path);
-  const currentText = await Deno.readTextFile(projectPath.absolutePath);
+  const currentText = await Bun.file(projectPath.absolutePath).text();
   const occurrences = countOccurrences(currentText, input.oldText);
 
   if (occurrences === 0) {
@@ -42,7 +42,7 @@ export async function editFile(
 
   const updatedText = currentText.replace(input.oldText, input.newText);
 
-  await Deno.writeTextFile(projectPath.absolutePath, updatedText);
+  await Bun.write(projectPath.absolutePath, updatedText);
 
   return {
     path: projectPath.relativePath,

@@ -1,5 +1,5 @@
 // randomUUID is a standard Web API available in Deno
-import type { CommandPolicyCode } from "./policy.ts";
+import type { CommandPolicyCode } from "./policy";
 
 export type ExecutionStatus =
   | "created"

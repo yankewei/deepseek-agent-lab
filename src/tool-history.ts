@@ -1,5 +1,6 @@
-import { dirname } from "@std/path";
-import type { ExecutionHistoryEvent } from "./execution-state.ts";
+import { dirname } from "node:path";
+import { appendFileSync, mkdirSync } from "node:fs";
+import type { ExecutionHistoryEvent } from "./execution-state";
 
 export type PersistedToolCall = {
   type: "tool_call";
@@ -66,11 +67,8 @@ export function createPersistedToolResult(input: {
 }
 
 function appendJsonl(input: { filePath: string; record: unknown }) {
-  Deno.mkdirSync(dirname(input.filePath), { recursive: true });
-  Deno.writeTextFileSync(input.filePath, `${JSON.stringify(input.record)}\n`, {
-    append: true,
-    create: true,
-  });
+  mkdirSync(dirname(input.filePath), { recursive: true });
+  appendFileSync(input.filePath, `${JSON.stringify(input.record)}\n`);
 }
 
 function readJsonl<T>(text: string): T[] {

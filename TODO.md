@@ -41,7 +41,7 @@ plan and completion criteria.
 - Tool call summary
 - Event stream references in final output
 - More explicit agent completion detection
-- Pre-commit check workflow using `deno task check`
+- Pre-commit check workflow using `bun run check`
 - PR workflow
 - Regression fixtures for safety cases
 - Coverage checks

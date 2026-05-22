@@ -1,6 +1,6 @@
-import { describe, it } from "@std/testing/bdd";
-import { expect } from "@std/expect";
-import { gitStatus } from "../src/tools/git-status.ts";
+import { describe, it } from "bun:test";
+import { expect } from "bun:test";
+import { gitStatus } from "../src/tools/git-status";
 
 describe("gitStatus", () => {
   it("maps to git status --short", async () => {

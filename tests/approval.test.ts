@@ -1,10 +1,10 @@
-import { describe, it } from "@std/testing/bdd";
-import { expect } from "@std/expect";
+import { describe, it } from "bun:test";
+import { expect } from "bun:test";
 import {
   type ApprovalRequest,
   formatApprovalRequest,
   requestApproval,
-} from "../src/approval.ts";
+} from "../src/approval";
 
 describe("requestApproval", () => {
   it("delegates approval decisions to the configured prompt", async () => {
@@ -12,7 +12,7 @@ describe("requestApproval", () => {
       action: "run-command",
       title: "Run command",
       details: {
-        Command: "deno install",
+        Command: "bun install",
       },
     };
 
@@ -29,7 +29,7 @@ describe("requestApproval", () => {
       action: "run-command",
       title: "Run command",
       details: {
-        Command: "deno install",
+        Command: "bun install",
       },
     };
 
@@ -47,34 +47,27 @@ describe("requestApproval", () => {
 
 describe("formatApprovalRequest", () => {
   it("formats a structured approval prompt for the CLI", () => {
-    expect(
-      formatApprovalRequest({
-        action: "run-command",
-        title: "Run command requiring approval",
-        subject: "deno add npm:vitest",
-        riskLevel: "medium",
-        policyReason: "Dependency command requires user approval.",
-        details: {
-          Command: "deno add npm:vitest",
-          Reason: "install test framework",
-        },
-      }),
-    ).toBe(`
-Approval required
-Run command requiring approval
-Action: run-command
-Subject: deno add npm:vitest
-Risk: medium
-Policy: Dependency command requires user approval.
+    const output = formatApprovalRequest({
+      action: "run-command",
+      title: "Run command requiring approval",
+      subject: "bun add npm:vitest",
+      riskLevel: "medium",
+      policyReason: "Dependency command requires user approval.",
+      details: {
+        Command: "bun add npm:vitest",
+        Reason: "install test framework",
+      },
+    });
 
-Details:
-  Command: deno add npm:vitest
-  Reason: install test framework
-
-Options:
-  y - approve once
-  n - deny
-`);
+    expect(output).toContain("Approval Required");
+    expect(output).toContain("Action: run-command");
+    expect(output).toContain("Subject: bun add npm:vitest");
+    expect(output).toContain("Risk:");
+    expect(output).toContain("Command: bun add npm:vitest");
+    expect(output).toContain("y - approve once");
+    expect(output).toContain("n - deny");
+    expect(output).toContain("╭");
+    expect(output).toContain("╰");
   });
 
   it("formats suggested policy amendments as an approval option", () => {
@@ -82,18 +75,18 @@ Options:
       formatApprovalRequest({
         action: "run-command",
         title: "Run command requiring approval",
-        subject: "deno add npm:vitest",
+        subject: "bun add npm:vitest",
         riskLevel: "medium",
         policyReason: "Dependency command requires user approval.",
         suggestedPolicyAmendment: {
           type: "allow-command-prefix",
-          prefix: "deno add",
+          prefix: "bun add",
         },
         details: {
-          Command: "deno add npm:vitest",
+          Command: "bun add npm:vitest",
           Reason: "install test framework",
         },
       }),
-    ).toContain("a - always allow prefix: deno add");
+    ).toContain("a - always allow prefix: bun add");
   });
 });

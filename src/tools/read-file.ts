@@ -1,11 +1,11 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { toAgentToolResult } from "../agent-tool-result.ts";
+import { toAgentToolResult } from "../agent-tool-result";
 import {
   executeToolWithState,
   type ExecutionTracker,
-} from "../execution-state.ts";
-import { resolveExistingProjectPath } from "../project-path.ts";
+} from "../execution-state";
+import { resolveExistingProjectPath } from "../project-path";
 
 export function createReadFileTool(
   options?: { executionTracker?: ExecutionTracker },
@@ -26,7 +26,7 @@ export function createReadFileTool(
             const projectPath = await resolveExistingProjectPath(path);
 
             return {
-              content: await Deno.readTextFile(projectPath.absolutePath),
+              content: await Bun.file(projectPath.absolutePath).text(),
             };
           },
         })

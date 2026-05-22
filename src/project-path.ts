@@ -1,4 +1,5 @@
-import { dirname, isAbsolute, relative, resolve, SEPARATOR } from "@std/path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { realpath } from "node:fs/promises";
 
 const blockedWriteFiles = new Set([".env", "pnpm-lock.yaml"]);
 const blockedWriteDirectories = new Set([
@@ -20,7 +21,7 @@ function assertInsideProject(root: string, absolutePath: string) {
 }
 
 function assertWritableRelativePath(relativePath: string) {
-  const pathParts = relativePath.split(SEPARATOR);
+  const pathParts = relativePath.split(sep);
 
   if (blockedWriteFiles.has(relativePath)) {
     throw new Error(`File is not writable by the agent: ${relativePath}`);
@@ -38,8 +39,8 @@ function assertWritableRelativePath(relativePath: string) {
 }
 
 export async function resolveExistingProjectPath(inputPath: string) {
-  const root = await Deno.realPath(Deno.cwd());
-  const absolutePath = await Deno.realPath(resolve(root, inputPath));
+  const root = await realpath(process.cwd());
+  const absolutePath = await realpath(resolve(root, inputPath));
   const rel = assertInsideProject(root, absolutePath);
 
   return {
@@ -58,10 +59,10 @@ export async function resolveWritableProjectPath(inputPath: string) {
 }
 
 export async function resolveNewWritableProjectPath(inputPath: string) {
-  const root = await Deno.realPath(Deno.cwd());
+  const root = await realpath(process.cwd());
   const absolutePath = resolve(root, inputPath);
   const rel = assertInsideProject(root, absolutePath);
-  const parentDirectory = await Deno.realPath(dirname(absolutePath));
+  const parentDirectory = await realpath(dirname(absolutePath));
 
   assertInsideProject(root, parentDirectory);
   assertWritableRelativePath(rel);

@@ -1,16 +1,20 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 export async function withTempProject(
   run: (projectRoot: string) => Promise<void>,
 ) {
-  const originalCwd = Deno.cwd();
-  const projectRoot = await Deno.makeTempDir({ prefix: "ds-coding-agent-" });
+  const originalCwd = process.cwd();
+  const projectRoot = mkdtempSync(join(tmpdir(), "ds-coding-agent-"));
 
   try {
-    Deno.chdir(projectRoot);
+    process.chdir(projectRoot);
     await run(projectRoot);
   } finally {
-    Deno.chdir(originalCwd);
+    process.chdir(originalCwd);
     try {
-      await Deno.remove(projectRoot, { recursive: true });
+      rmSync(projectRoot, { recursive: true });
     } catch {
       // ignore cleanup errors
     }

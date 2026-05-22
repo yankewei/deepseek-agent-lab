@@ -1,12 +1,12 @@
-import { createApplyPatchTool } from "./apply-patch.ts";
-import { createEditFileTool } from "./edit-file.ts";
-import { createGetDiffTool } from "./get-diff.ts";
-import { createGitStatusTool } from "./git-status.ts";
-import { createListFilesTool } from "./list-files.ts";
-import { createReadFileTool } from "./read-file.ts";
-import type { ExecutionTracker } from "../execution-state.ts";
-import { createRunCommandTool } from "./run-command.ts";
-import { createSearchFilesTool } from "./search-files.ts";
+import { createApplyPatchTool } from "./apply-patch";
+import { createEditFileTool } from "./edit-file";
+import { createGetDiffTool } from "./get-diff";
+import { createGitStatusTool } from "./git-status";
+import { createListFilesTool } from "./list-files";
+import { createReadFileTool } from "./read-file";
+import type { ExecutionTracker } from "../execution-state";
+import { createRunCommandTool } from "./run-command";
+import { createSearchFilesTool } from "./search-files";
 
 export function createTools(options?: { executionTracker?: ExecutionTracker }) {
   return {

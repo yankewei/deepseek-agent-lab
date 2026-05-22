@@ -1,6 +1,6 @@
-import { describe, it } from "@std/testing/bdd";
-import { expect } from "@std/expect";
-import { executeCommandWithPolicy } from "../src/command-executor.ts";
+import { describe, it } from "bun:test";
+import { expect } from "bun:test";
+import { executeCommandWithPolicy } from "../src/command-executor";
 import {
   createExecutionTracker,
   executeToolWithState,
@@ -8,7 +8,7 @@ import {
   type ExecutionHistoryEvent,
   type ExecutionHistorySink,
   type ExecutionTracker,
-} from "../src/execution-state.ts";
+} from "../src/execution-state";
 
 function createTestTracker() {
   let id = 0;
@@ -54,7 +54,7 @@ describe("execution state tracking", () => {
     const tracker = createTestTracker();
 
     const result = await executeCommandWithPolicy(
-      { command: " deno   task   test " },
+      { command: " bun   test " },
       async () => {
         throw new Error("approval should not be requested");
       },
@@ -70,12 +70,12 @@ describe("execution state tracking", () => {
     expect(result.executionId).toBe("exec_1");
     expect(record).toMatchObject({
       id: "exec_1",
-      command: " deno   task   test ",
+      command: " bun   test ",
       status: "completed",
       durationMs: 3000,
       policyDecision: "allow",
       policyCode: "LOW_RISK_COMMAND_ALLOWED",
-      normalizedCommand: "deno task test",
+      normalizedCommand: "bun test",
       exitCode: 0,
     });
     expect(recordStatuses(tracker)).toEqual([
@@ -90,7 +90,7 @@ describe("execution state tracking", () => {
     const tracker = createTestTracker();
 
     await executeCommandWithPolicy(
-      { command: "deno add npm:vitest", reason: "install test framework" },
+      { command: "bun add npm:vitest", reason: "install test framework" },
       async () => ({ decision: "approve_once" }),
       async () => ({
         stdout: "",
@@ -122,7 +122,7 @@ describe("execution state tracking", () => {
     const tracker = createTestTracker();
 
     const result = await executeCommandWithPolicy(
-      { command: "deno install", reason: "sync dependencies" },
+      { command: "bun install", reason: "sync dependencies" },
       async () => ({ decision: "deny" }),
       async () => {
         throw new Error("command should not execute");
@@ -181,7 +181,7 @@ describe("execution state tracking", () => {
 
     await expect(
       executeCommandWithPolicy(
-        { command: "deno task test" },
+        { command: "bun test" },
         async () => ({ decision: "approve_once" }),
         async () => {
           throw new Error("test runner crashed");
@@ -211,7 +211,7 @@ describe("execution state tracking", () => {
     const tracker = createTestTrackerWithEvents(events);
 
     await executeCommandWithPolicy(
-      { command: "deno task test" },
+      { command: "bun test" },
       async () => {
         throw new Error("approval should not be requested");
       },
@@ -288,7 +288,7 @@ describe("execution state tracking", () => {
       },
     });
 
-    expect(() => tracker.createRecord({ command: "deno task test" })).toThrow(
+    expect(() => tracker.createRecord({ command: "bun test" })).toThrow(
       /history unavailable/,
     );
   });
@@ -297,7 +297,7 @@ describe("execution state tracking", () => {
     const events: ExecutionEvent[] = [];
     const tracker = createTestTrackerWithEvents(events);
 
-    const commandRecord = tracker.createRecord({ command: "deno task test" });
+    const commandRecord = tracker.createRecord({ command: "bun test" });
     const toolRecord = tracker.createRecord({
       kind: "tool",
       toolName: "listFiles",
@@ -366,7 +366,7 @@ describe("execution state tracking", () => {
     const events: ExecutionEvent[] = [];
     const tracker = createTestTrackerWithEvents(events);
 
-    const record = tracker.createRecord({ command: "deno task test" });
+    const record = tracker.createRecord({ command: "bun test" });
     events[0].record.status = "failed";
     events[0].record.history.push({
       status: "failed",
@@ -391,7 +391,7 @@ describe("execution state tracking", () => {
       },
     });
 
-    tracker.createRecord({ command: "deno task test" });
+    tracker.createRecord({ command: "bun test" });
 
     expect(historySink.events[0].record.status).toBe("created");
     expect(events[0].record.status).toBe("failed");

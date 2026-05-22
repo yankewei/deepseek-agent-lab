@@ -1,5 +1,5 @@
-import { describe, it } from "@std/testing/bdd";
-import { expect } from "@std/expect";
+import { describe, it } from "bun:test";
+import { expect } from "bun:test";
 import {
   assertValidRunId,
   createInitialRunMetadata,
@@ -12,8 +12,8 @@ import {
   readRunMetadata,
   updateRunStatus,
   writeInitialRunMetadata,
-} from "../src/run-metadata.ts";
-import { withTempProject } from "./helpers/temp-project.ts";
+} from "../src/run-metadata";
+import { withTempProject } from "./helpers/temp-project";
 
 describe("run metadata", () => {
   it("creates deterministic run ids with injectable time and suffix", () => {
@@ -96,7 +96,7 @@ describe("run metadata", () => {
       });
 
       const filePath = writeInitialRunMetadata({ metadata });
-      const text = await Deno.readTextFile(filePath);
+      const text = await Bun.file(filePath).text();
 
       expect(filePath).toBe(".disco/runs/run_1/run.json");
       expect(JSON.parse(text)).toEqual({

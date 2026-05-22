@@ -1,13 +1,13 @@
-import { describe, it } from "@std/testing/bdd";
-import { expect } from "@std/expect";
+import { describe, it } from "bun:test";
+import { expect } from "bun:test";
 import {
   createJsonlExecutionHistorySink,
   readJsonlExecutionHistoryEvents,
-} from "../src/execution-history.ts";
+} from "../src/execution-history";
 import {
   createExecutionTracker,
   type ExecutionEvent,
-} from "../src/execution-state.ts";
+} from "../src/execution-state";
 import {
   createInitialRunMetadata,
   getExecutionHistoryPath,
@@ -16,7 +16,7 @@ import {
   readRunMetadata,
   updateRunStatus,
   writeInitialRunMetadata,
-} from "../src/run-metadata.ts";
+} from "../src/run-metadata";
 import {
   appendPersistedToolCall,
   appendPersistedToolResult,
@@ -24,27 +24,24 @@ import {
   createPersistedToolResult,
   readPersistedToolCalls,
   readPersistedToolResults,
-} from "../src/tool-history.ts";
-import type { AgentToolResult } from "../src/agent-tool-result.ts";
-import { createTools } from "../src/tools/index.ts";
-import { createApplyPatchTool } from "../src/tools/apply-patch.ts";
-import { withTempProject } from "./helpers/temp-project.ts";
+} from "../src/tool-history";
+import type { AgentToolResult } from "../src/agent-tool-result";
+import { createTools } from "../src/tools/index";
+import { createApplyPatchTool } from "../src/tools/apply-patch";
+import { withTempProject } from "./helpers/temp-project";
 
 const toolExecutionOptions = {
   toolCallId: "call_1",
   messages: [],
 };
 
-async function runGit(args: string[]) {
-  const command = new Deno.Command("git", {
-    args,
-    stdout: "piped",
-    stderr: "piped",
-  });
-  const result = await command.output();
+import { execa } from "execa";
 
-  if (!result.success) {
-    throw new Error(new TextDecoder().decode(result.stderr));
+async function runGit(args: string[]) {
+  const result = await execa("git", args, { reject: false });
+
+  if (result.exitCode !== 0) {
+    throw new Error(result.stderr);
   }
 }
 
@@ -64,7 +61,7 @@ describe("agent runtime workflow", () => {
   it("reads, previews, edits, and inspects git state through tools", async () => {
     await withTempProject(async (projectRoot) => {
       await runGit(["init"]);
-      await Deno.writeTextFile(
+      await Bun.write(
         "index.ts",
         "const name = 'agent';\nconsole.log(name);\n",
       );
@@ -145,7 +142,7 @@ describe("agent runtime workflow", () => {
           dryRun: true,
         },
       });
-      expect(await Deno.readTextFile("index.ts")).toBe(
+      expect(await Bun.file("index.ts").text()).toBe(
         "const name = 'agent';\nconsole.log(name);\n",
       );
 
@@ -212,7 +209,7 @@ describe("agent runtime workflow", () => {
       expect(events.every((event) => event.record.kind === "tool")).toBe(true);
 
       const persistedEvents = readJsonlExecutionHistoryEvents({
-        text: await Deno.readTextFile(historyFilePath),
+        text: await Bun.file(historyFilePath).text(),
       });
 
       expect(persistedEvents.map((event) => event.sequence)).toEqual(
@@ -226,7 +223,7 @@ describe("agent runtime workflow", () => {
         "getDiff",
       ]);
       expect(readPersistedToolCalls({
-        text: await Deno.readTextFile(toolCallsPath),
+        text: await Bun.file(toolCallsPath).text(),
       })).toEqual([
         {
           type: "tool_call",
@@ -239,7 +236,7 @@ describe("agent runtime workflow", () => {
         },
       ]);
       expect(readPersistedToolResults({
-        text: await Deno.readTextFile(toolResultsPath),
+        text: await Bun.file(toolResultsPath).text(),
       })).toEqual([
         {
           type: "tool_result",
@@ -271,7 +268,7 @@ describe("agent runtime workflow", () => {
 
   it("persists approval-related applyPatch state changes", async () => {
     await withTempProject(async () => {
-      await Deno.writeTextFile("old.txt", "remove me\n");
+      await Bun.write("old.txt", "remove me\n");
 
       const runId = "run_approval";
       const events: ExecutionEvent[] = [];
@@ -344,7 +341,7 @@ describe("agent runtime workflow", () => {
       });
 
       const persistedEvents = readJsonlExecutionHistoryEvents({
-        text: await Deno.readTextFile(historyFilePath),
+        text: await Bun.file(historyFilePath).text(),
       });
 
       expect(persistedEvents.map((event) => event.record.status)).toEqual([
@@ -370,7 +367,7 @@ describe("agent runtime workflow", () => {
       ]);
 
       expect(readPersistedToolCalls({
-        text: await Deno.readTextFile(toolCallsPath),
+        text: await Bun.file(toolCallsPath).text(),
       })).toEqual([
         {
           type: "tool_call",
@@ -384,7 +381,7 @@ describe("agent runtime workflow", () => {
       ]);
 
       const persistedToolResults = readPersistedToolResults({
-        text: await Deno.readTextFile(toolResultsPath),
+        text: await Bun.file(toolResultsPath).text(),
       });
       expect(persistedToolResults).toEqual([
         {

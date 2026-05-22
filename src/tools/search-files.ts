@@ -1,13 +1,13 @@
 import { tool } from "ai";
 import { execa } from "execa";
-import { relative } from "@std/path";
+import { relative } from "node:path";
 import { z } from "zod";
-import { toAgentToolResult } from "../agent-tool-result.ts";
+import { toAgentToolResult } from "../agent-tool-result";
 import {
   executeToolWithState,
   type ExecutionTracker,
-} from "../execution-state.ts";
-import { resolveExistingProjectPath } from "../project-path.ts";
+} from "../execution-state";
+import { resolveExistingProjectPath } from "../project-path";
 
 const ignoredGlobs = [
   "!.git/**",

@@ -242,13 +242,13 @@ Done when:
 Run:
 
 ```bash
-deno task check
+bun run check
 ```
 
 If only a narrower test is needed during development:
 
 ```bash
-deno test --allow-all tests/apply-patch.test.ts
+bun test tests/apply-patch.test.ts
 ```
 
 Learning goal:

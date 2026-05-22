@@ -1,11 +1,11 @@
 import { tool } from "ai";
 import { execa } from "execa";
 import { z } from "zod";
-import { toAgentToolResult } from "../agent-tool-result.ts";
+import { toAgentToolResult } from "../agent-tool-result";
 import {
   executeToolWithState,
   type ExecutionTracker,
-} from "../execution-state.ts";
+} from "../execution-state";
 
 type DiffMode = "stat" | "name-only" | "full";
 

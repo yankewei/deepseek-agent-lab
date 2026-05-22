@@ -1,11 +1,11 @@
 import { execa } from "execa";
-import { type ApprovalPrompt, requestApproval } from "./approval.ts";
-import type { ExecutionTracker } from "./execution-state.ts";
+import { type ApprovalPrompt, requestApproval } from "./approval";
+import type { ExecutionTracker } from "./execution-state";
 import {
   evaluateCommandPolicy,
   getApprovableCommandPrefix,
   type RuntimeCommandPolicy,
-} from "./policy.ts";
+} from "./policy";
 
 export type ExecuteRun = (
   command: string,

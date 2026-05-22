@@ -32,34 +32,34 @@ DEEPSEEK_API_KEY=your_key_here
 Install dependencies:
 
 ```bash
-deno install
+bun install
 ```
 
 Run the agent:
 
 ```bash
-deno task start "请分析这个项目"
+bun run start "请分析这个项目"
 ```
 
 Build a standalone binary for the current platform:
 
 ```bash
-deno task build:bin
+bun run build:bin
 ./dist/ds-coding-agent "请分析这个项目"
 ```
 
 Run checks:
 
 ```bash
-deno task test
+bun test
 ```
 
 ## Scripts
 
 ```bash
-deno task start "task"   # Run the coding agent
-deno task build:bin      # Build a standalone binary in dist/
-deno task test           # Run tests
+bun run start "task"   # Run the coding agent
+bun run build:bin      # Build a standalone binary in dist/
+bun test           # Run tests
 ```
 
 ## Binary Build
@@ -69,7 +69,7 @@ entrypoint and runtime dependencies into one executable for the current
 operating system and CPU architecture.
 
 ```bash
-deno task build:bin
+bun run build:bin
 ```
 
 The default output path is:
@@ -87,7 +87,7 @@ dist/ds-coding-agent.exe
 To customize the output path:
 
 ```bash
-deno compile --allow-all --output dist/agent ./index.ts
+bun build --compile --allow-all --output dist/agent ./index.ts
 ```
 
 The executable still reads configuration from the environment, so keep using
@@ -143,11 +143,11 @@ Current command policy:
 
 ```text
 pwd                  -> allow
-deno task test       -> allow
-deno task build:bin  -> allow
-deno --version       -> allow
-deno install         -> prompt
-deno add ...         -> prompt
+bun test       -> allow
+bun run build:bin  -> allow
+bun --version       -> allow
+bun install         -> prompt
+bun add ...         -> prompt
 everything else      -> forbidden
 ```
 
@@ -165,22 +165,22 @@ Write tools additionally block sensitive or generated paths:
 - `dist/`
 - `build/`
 - `.next/`
-- `deno.lock`
+- `bun.lock`
 
 `runCommand` runs these commands without approval:
 
 ```text
 pwd
-deno task test
-deno task build:bin
-deno --version
+bun test
+bun run build:bin
+bun --version
 ```
 
 Dependency changes use `runCommand` too, but require approval before running:
 
 ```text
-deno install
-deno add ...
+bun install
+bun add ...
 ```
 
 ## Why Not Allow `cat`, `ls`, or `rg` Through `runCommand`?
@@ -292,7 +292,7 @@ visually separate. Debug mode shows every runtime event, including execution
 events, tool results, step boundaries, and token usage:
 
 ```bash
-DEBUG=1 deno task start "列出当前项目文件"
+DEBUG=1 bun run start "列出当前项目文件"
 ```
 
 ## Human-in-the-loop Approval
@@ -304,15 +304,15 @@ The approval request is structured so the UI can show the important context:
 {
   action: "run-command",
   title: "Run command requiring approval",
-  subject: "deno add npm:vitest",
+  subject: "bun add npm:vitest",
   riskLevel: "medium",
   policyReason: "Dependency command requires user approval.",
   suggestedPolicyAmendment: {
     type: "allow-command-prefix",
-    prefix: "deno add"
+    prefix: "bun add"
   },
   details: {
-    Command: "deno add npm:vitest",
+    Command: "bun add npm:vitest",
     Reason: "install test framework"
   }
 }
@@ -324,17 +324,17 @@ The CLI renders this as an explicit approve-once prompt:
 Approval required
 Run command requiring approval
 Action: run-command
-Subject: deno add npm:vitest
+Subject: bun add npm:vitest
 Risk: medium
 Policy: Dependency command requires user approval.
 
 Details:
-  Command: deno add npm:vitest
+  Command: bun add npm:vitest
   Reason: install test framework
 
 Options:
   y - approve once
-  a - always allow prefix: deno add
+  a - always allow prefix: bun add
   n - deny
 ```
 
@@ -495,7 +495,7 @@ The test suite covers the important safety behavior:
 Run:
 
 ```bash
-deno task test
+bun test
 ```
 
 ## Learning Path

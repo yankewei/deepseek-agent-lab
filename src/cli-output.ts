@@ -1,9 +1,9 @@
-import type { ExecutionEvent } from "./execution-state.ts";
-
-const divider = "─".repeat(72);
+import { inspect } from "node:util";
+import type { ExecutionEvent } from "./execution-state";
+import { divider, getTerminalWidth, palette } from "./terminal";
 
 export function formatValue(value: unknown) {
-  return Deno.inspect(value, {
+  return inspect(value, {
     colors: false,
     compact: false,
     depth: undefined,
@@ -11,14 +11,27 @@ export function formatValue(value: unknown) {
   });
 }
 
+export function formatCompactValue(value: Record<string, unknown>) {
+  const filtered = Object.fromEntries(
+    Object.entries(value).filter(([, v]) => v !== undefined),
+  );
+  return inspect(filtered, {
+    colors: false,
+    compact: true,
+    depth: 4,
+    sorted: false,
+  });
+}
+
 export function formatSection(title: string, body?: string) {
+  const width = getTerminalWidth();
   const content = body?.trimEnd();
 
   return [
     "",
-    divider,
-    title,
-    divider,
+    palette.dim(divider(width)),
+    palette.title(title),
+    palette.dim(divider(width)),
     ...(content ? [content] : []),
     "",
   ].join("\n");
@@ -27,9 +40,24 @@ export function formatSection(title: string, body?: string) {
 export function formatExecutionEvent(event: ExecutionEvent) {
   const { record } = event;
 
+  const colorByStatus = () => {
+    if (record.status === "completed" || record.status === "approved") {
+      return palette.success;
+    }
+    if (record.status === "failed" || record.status === "denied") {
+      return palette.error;
+    }
+    if (record.status === "waiting_for_approval") {
+      return palette.warning;
+    }
+    return palette.title;
+  };
+
+  const title = colorByStatus()(`📡 EXECUTION EVENT: ${record.status}`);
+
   return formatSection(
-    `📡 EXECUTION EVENT: ${record.status}`,
-    formatValue({
+    title,
+    formatCompactValue({
       sequence: event.sequence,
       id: record.id,
       kind: record.kind,
@@ -41,6 +69,10 @@ export function formatExecutionEvent(event: ExecutionEvent) {
       error: record.error,
     }),
   );
+}
+
+export function formatAgentError(error: { code: string; message: string }) {
+  return `${palette.error(`[${error.code}]`)} ${error.message}`;
 }
 
 export function getStreamText(event: unknown) {

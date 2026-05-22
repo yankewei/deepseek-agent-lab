@@ -1,19 +1,17 @@
-import { dirname } from "@std/path";
+import { dirname } from "node:path";
+import { appendFileSync, mkdirSync } from "node:fs";
 import type {
   ExecutionHistoryEvent,
   ExecutionHistorySink,
-} from "./execution-state.ts";
+} from "./execution-state";
 
 export function createJsonlExecutionHistorySink(input: {
   filePath: string;
 }): ExecutionHistorySink {
   return {
     append(event: ExecutionHistoryEvent) {
-      Deno.mkdirSync(dirname(input.filePath), { recursive: true });
-      Deno.writeTextFileSync(input.filePath, `${JSON.stringify(event)}\n`, {
-        append: true,
-        create: true,
-      });
+      mkdirSync(dirname(input.filePath), { recursive: true });
+      appendFileSync(input.filePath, `${JSON.stringify(event)}\n`);
     },
   };
 }
