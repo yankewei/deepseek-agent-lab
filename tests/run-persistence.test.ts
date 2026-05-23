@@ -33,8 +33,8 @@ describe("run persistence", () => {
       });
 
       runPersistence.persistModelStreamStarted();
-      runPersistence.persistModelReasoningDelta({ text: "thinking" });
-      runPersistence.persistModelTextDelta({ text: "answer" });
+      runPersistence.persistModelReasoning({ text: "thinking" });
+      runPersistence.persistModelText({ text: "answer" });
       runPersistence.persistToolCall({
         toolCallId: "call_read_file",
         toolName: "readFile",
@@ -110,8 +110,8 @@ describe("run persistence", () => {
         .toEqual([
           "session_meta",
           "model_stream_started",
-          "model_reasoning_delta",
-          "model_text_delta",
+          "model_reasoning",
+          "model_text",
           "tool_call",
           "execution_state_changed",
           "execution_state_changed",

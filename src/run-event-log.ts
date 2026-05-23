@@ -23,14 +23,14 @@ export type RunStatusChangedEvent = {
   completedAt?: string;
 };
 
-export type ModelTextDeltaEvent = {
-  type: "model_text_delta";
+export type ModelTextEvent = {
+  type: "model_text";
   timestamp: string;
   text: string;
 };
 
-export type ModelReasoningDeltaEvent = {
-  type: "model_reasoning_delta";
+export type ModelReasoningEvent = {
+  type: "model_reasoning";
   timestamp: string;
   text: string;
 };
@@ -64,8 +64,8 @@ export type ModelStepEvent = {
 export type RunLogEvent =
   | RunSessionMetaEvent
   | RunStatusChangedEvent
-  | ModelTextDeltaEvent
-  | ModelReasoningDeltaEvent
+  | ModelTextEvent
+  | ModelReasoningEvent
   | ModelStreamStartedEvent
   | ModelStreamFinishedEvent
   | ModelToolErrorEvent
