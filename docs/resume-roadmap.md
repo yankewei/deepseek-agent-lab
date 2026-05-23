@@ -53,8 +53,8 @@ Core event types:
 
 - `session_meta`
 - `model_stream_started`
-- `model_text_delta`
-- `model_reasoning_delta`
+- `model_text`
+- `model_reasoning`
 - `tool_call`
 - `tool_result`
 - `model_tool_error`

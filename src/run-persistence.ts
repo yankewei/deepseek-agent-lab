@@ -42,8 +42,8 @@ export type RunPersistence = {
   approvalRecorder: ApprovalHistoryRecorder;
   updateStatus: (status: RunStatus) => void;
   persistModelStreamStarted: () => void;
-  persistModelTextDelta: (input: { text: string }) => void;
-  persistModelReasoningDelta: (input: { text: string }) => void;
+  persistModelText: (input: { text: string }) => void;
+  persistModelReasoning: (input: { text: string }) => void;
   persistModelStreamFinished: (input: {
     finishReason: string;
     usage?: unknown;
@@ -183,21 +183,21 @@ export function createRunPersistence(input: {
         },
       });
     },
-    persistModelTextDelta(delta) {
+    persistModelText(delta) {
       appendRunLogEvent({
         filePath: runLogPath,
         event: {
-          type: "model_text_delta",
+          type: "model_text",
           timestamp: getTimestamp(),
           text: delta.text,
         },
       });
     },
-    persistModelReasoningDelta(delta) {
+    persistModelReasoning(delta) {
       appendRunLogEvent({
         filePath: runLogPath,
         event: {
-          type: "model_reasoning_delta",
+          type: "model_reasoning",
           timestamp: getTimestamp(),
           text: delta.text,
         },

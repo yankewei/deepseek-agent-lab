@@ -96,6 +96,8 @@ After changing files:
 
   let textSectionOpen = false;
   let reasoningSectionOpen = false;
+  let textBuffer = "";
+  let reasoningBuffer = "";
 
   function closeOpenStreamSection() {
     if (textSectionOpen || reasoningSectionOpen) {
@@ -175,9 +177,7 @@ After changing files:
       }
 
       case "reasoning-delta": {
-        runPersistence.persistModelReasoningDelta({
-          text: getStreamText(event),
-        });
+        reasoningBuffer += getStreamText(event);
 
         if (!reasoningSectionOpen) {
           closeOpenStreamSection();
@@ -194,6 +194,10 @@ After changing files:
 
       case "reasoning-end": {
         closeOpenStreamSection();
+        runPersistence.persistModelReasoning({
+          text: reasoningBuffer,
+        });
+        reasoningBuffer = "";
 
         break;
       }
@@ -205,9 +209,7 @@ After changing files:
       }
 
       case "text-delta": {
-        runPersistence.persistModelTextDelta({
-          text: getStreamText(event),
-        });
+        textBuffer += getStreamText(event);
 
         if (!textSectionOpen) {
           closeOpenStreamSection();
@@ -222,6 +224,10 @@ After changing files:
 
       case "text-end": {
         closeOpenStreamSection();
+        runPersistence.persistModelText({
+          text: textBuffer,
+        });
+        textBuffer = "";
 
         break;
       }

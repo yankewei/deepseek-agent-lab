@@ -6,6 +6,7 @@ import {
   getApprovableCommandPrefix,
   type RuntimeCommandPolicy,
 } from "./policy";
+import { runCommand } from "./run-command";
 
 export type ExecuteRun = (
   command: string,
