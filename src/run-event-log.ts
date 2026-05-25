@@ -1,7 +1,6 @@
 import { dirname } from "node:path";
 import { appendFileSync, mkdirSync } from "node:fs";
 import type { PersistedApprovalEvent } from "./approval-history";
-import type { ExecutionHistoryEvent } from "./execution-state";
 import type { RunStatus } from "./run-metadata";
 import type { PersistedToolCall, PersistedToolResult } from "./tool-history";
 
@@ -70,7 +69,6 @@ export type RunLogEvent =
   | ModelStreamFinishedEvent
   | ModelToolErrorEvent
   | ModelStepEvent
-  | ExecutionHistoryEvent
   | PersistedToolCall
   | PersistedToolResult
   | PersistedApprovalEvent;

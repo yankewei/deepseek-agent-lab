@@ -6,9 +6,6 @@ import {
   readPersistedApprovalEvents,
 } from "../src/approval-history";
 import {
-  readJsonlExecutionHistoryEvents,
-} from "../src/execution-history";
-import {
   createRunPersistence,
   getToolResultExecutionId,
 } from "../src/run-persistence";
@@ -113,22 +110,12 @@ describe("run persistence", () => {
           "model_reasoning",
           "model_text",
           "tool_call",
-          "execution_state_changed",
-          "execution_state_changed",
-          "execution_state_changed",
           "tool_result",
           "model_stream_finished",
           "approval_requested",
           "approval_resolved",
           "run_status_changed",
         ]);
-      expect(readJsonlExecutionHistoryEvents({
-        text: runLogText,
-      }).map((event) => event.record.status)).toEqual([
-        "created",
-        "running",
-        "completed",
-      ]);
       expect(readPersistedToolCalls({
         text: runLogText,
       })).toEqual([

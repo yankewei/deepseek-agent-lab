@@ -1,7 +1,5 @@
 import { dirname } from "node:path";
 import { appendFileSync, mkdirSync } from "node:fs";
-import type { ExecutionHistoryEvent } from "./execution-state";
-
 export type PersistedToolCall = {
   type: "tool_call";
   toolCallId: string;
@@ -25,7 +23,6 @@ export type CompletedWriteToolCall = {
   input: unknown;
   output: unknown;
   executionId: string;
-  completedAt?: string;
 };
 
 const DEFAULT_WRITE_TOOL_NAMES = ["applyPatch", "editFile"];
@@ -108,10 +105,17 @@ export function readPersistedToolResults(input: {
   );
 }
 
+function isOkToolResult(output: unknown): boolean {
+  if (!output || typeof output !== "object") {
+    return false;
+  }
+
+  return "ok" in output && output.ok === true;
+}
+
 export function findCompletedWriteToolCalls(input: {
   toolCalls: PersistedToolCall[];
   toolResults: PersistedToolResult[];
-  executionEvents: ExecutionHistoryEvent[];
   writeToolNames?: readonly string[];
 }): CompletedWriteToolCall[] {
   const writeToolNames = new Set(
@@ -120,26 +124,19 @@ export function findCompletedWriteToolCalls(input: {
   const callsById = new Map(
     input.toolCalls.map((call) => [call.toolCallId, call]),
   );
-  const completedExecutionsById = new Map(
-    input.executionEvents
-      .filter((event) =>
-        event.record.kind === "tool" &&
-        event.record.status === "completed" &&
-        event.record.toolName &&
-        writeToolNames.has(event.record.toolName)
-      )
-      .map((event) => [event.record.id, event.record]),
-  );
 
   return input.toolResults.flatMap((result) => {
-    if (!writeToolNames.has(result.toolName) || !result.executionId) {
+    if (
+      !writeToolNames.has(result.toolName) ||
+      !result.executionId ||
+      !isOkToolResult(result.output)
+    ) {
       return [];
     }
 
     const call = callsById.get(result.toolCallId);
-    const execution = completedExecutionsById.get(result.executionId);
 
-    if (!call || !execution || execution.toolName !== result.toolName) {
+    if (!call) {
       return [];
     }
 
@@ -149,7 +146,6 @@ export function findCompletedWriteToolCalls(input: {
       input: call.input,
       output: result.output,
       executionId: result.executionId,
-      ...(execution.completedAt ? { completedAt: execution.completedAt } : {}),
     }];
   });
 }

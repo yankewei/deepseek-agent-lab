@@ -4,7 +4,6 @@ import {
   createPersistedApprovalResult,
   type ApprovalHistoryRecorder,
 } from "./approval-history";
-import { createJsonlExecutionHistorySink } from "./execution-history";
 import {
   createExecutionTracker,
   type ExecutionEvent,
@@ -110,9 +109,6 @@ export function createRunPersistence(input: {
   });
   const executionTracker = createExecutionTracker({
     createId: input.createExecutionId,
-    historySink: createJsonlExecutionHistorySink({
-      filePath: runLogPath,
-    }),
     now: input.now,
     onEvent: input.onExecutionEvent,
   });

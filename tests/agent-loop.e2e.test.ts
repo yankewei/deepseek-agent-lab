@@ -1,10 +1,6 @@
 import { describe, it } from "bun:test";
 import { expect } from "bun:test";
 import {
-  createJsonlExecutionHistorySink,
-  readJsonlExecutionHistoryEvents,
-} from "../src/execution-history";
-import {
   createExecutionTracker,
   type ExecutionEvent,
 } from "../src/execution-state";
@@ -78,9 +74,6 @@ describe("agent runtime workflow", () => {
       const runLogPath = getRunLogPath({ runId });
       const executionTracker = createExecutionTracker({
         createId: () => `exec_${events.length + 1}`,
-        historySink: createJsonlExecutionHistorySink({
-          filePath: runLogPath,
-        }),
         onEvent: (event) => {
           events.push(event);
         },
@@ -204,20 +197,6 @@ describe("agent runtime workflow", () => {
       ]);
       expect(events.every((event) => event.record.kind === "tool")).toBe(true);
 
-      const persistedEvents = readJsonlExecutionHistoryEvents({
-        text: await Bun.file(runLogPath).text(),
-      });
-
-      expect(persistedEvents.map((event) => event.sequence)).toEqual(
-        events.map((event) => event.sequence),
-      );
-      expect(completedToolNames(persistedEvents)).toEqual([
-        "readFile",
-        "applyPatch",
-        "applyPatch",
-        "gitStatus",
-        "getDiff",
-      ]);
       expect(readPersistedToolCalls({
         text: await Bun.file(runLogPath).text(),
       })).toEqual([
@@ -271,9 +250,6 @@ describe("agent runtime workflow", () => {
       const runLogPath = getRunLogPath({ runId });
       const executionTracker = createExecutionTracker({
         createId: () => `exec_${events.length + 1}`,
-        historySink: createJsonlExecutionHistorySink({
-          filePath: runLogPath,
-        }),
         onEvent: (event) => {
           events.push(event);
         },
@@ -334,32 +310,6 @@ describe("agent runtime workflow", () => {
         }),
       });
 
-      const persistedEvents = readJsonlExecutionHistoryEvents({
-        text: await Bun.file(runLogPath).text(),
-      });
-
-      expect(persistedEvents.map((event) => event.record.status)).toEqual([
-        "created",
-        "waiting_for_approval",
-        "approved",
-        "running",
-        "completed",
-      ]);
-      expect(persistedEvents.map((event) => event.record.toolName)).toEqual([
-        "applyPatch",
-        "applyPatch",
-        "applyPatch",
-        "applyPatch",
-        "applyPatch",
-      ]);
-      expect(persistedEvents.map((event) => event.sequence)).toEqual([
-        1,
-        2,
-        3,
-        4,
-        5,
-      ]);
-
       expect(readPersistedToolCalls({
         text: await Bun.file(runLogPath).text(),
       })).toEqual([
@@ -397,13 +347,7 @@ describe("agent runtime workflow", () => {
           timestamp: "2026-01-02T03:04:09.000Z",
         },
       ]);
-      expect(
-        persistedEvents.some((event) =>
-          event.record.id === persistedToolResults[0].executionId &&
-          event.record.toolName === "applyPatch" &&
-          event.record.status === "completed"
-        ),
-      ).toBe(true);
+
     });
   });
 });

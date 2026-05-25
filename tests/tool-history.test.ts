@@ -12,10 +12,6 @@ import {
 import {
   getRunLogPath,
 } from "../src/run-metadata";
-import {
-  createJsonlExecutionHistorySink,
-  readJsonlExecutionHistoryEvents,
-} from "../src/execution-history";
 import { withTempProject } from "./helpers/temp-project";
 
 describe("tool history", () => {
@@ -234,39 +230,12 @@ describe("tool history", () => {
           now: () => new Date("2026-01-02T03:04:06.007Z"),
         }),
       });
-      createJsonlExecutionHistorySink({ filePath: runLogPath }).append({
-        type: "execution_state_changed",
-        sequence: 1,
-        timestamp: "2026-01-02T03:04:06.007Z",
-        record: {
-          id: "exec_1",
-          kind: "tool",
-          toolName: "applyPatch",
-          status: "completed",
-          startedAt: "2026-01-02T03:04:05.006Z",
-          completedAt: "2026-01-02T03:04:06.007Z",
-          durationMs: 1001,
-          history: [
-            {
-              status: "created",
-              at: "2026-01-02T03:04:05.006Z",
-            },
-            {
-              status: "completed",
-              at: "2026-01-02T03:04:06.007Z",
-            },
-          ],
-        },
-      });
 
       const completedWriteToolCalls = findCompletedWriteToolCalls({
         toolCalls: readPersistedToolCalls({
           text: await Bun.file(runLogPath).text(),
         }),
         toolResults: readPersistedToolResults({
-          text: await Bun.file(runLogPath).text(),
-        }),
-        executionEvents: readJsonlExecutionHistoryEvents({
           text: await Bun.file(runLogPath).text(),
         }),
       });
@@ -289,7 +258,6 @@ describe("tool history", () => {
             },
           },
           executionId: "exec_1",
-          completedAt: "2026-01-02T03:04:06.007Z",
         },
       ]);
     });
@@ -322,32 +290,6 @@ describe("tool history", () => {
           },
           executionId: "exec_1",
           timestamp: "2026-01-02T03:04:06.007Z",
-        },
-      ],
-      executionEvents: [
-        {
-          type: "execution_state_changed",
-          sequence: 1,
-          timestamp: "2026-01-02T03:04:06.007Z",
-          record: {
-            id: "exec_1",
-            kind: "tool",
-            toolName: "applyPatch",
-            status: "failed",
-            startedAt: "2026-01-02T03:04:05.006Z",
-            completedAt: "2026-01-02T03:04:06.007Z",
-            durationMs: 1001,
-            history: [
-              {
-                status: "created",
-                at: "2026-01-02T03:04:05.006Z",
-              },
-              {
-                status: "failed",
-                at: "2026-01-02T03:04:06.007Z",
-              },
-            ],
-          },
         },
       ],
     });
