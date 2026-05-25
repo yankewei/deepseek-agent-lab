@@ -55,6 +55,7 @@ export type RunPersistence = {
   persistModelStep: (input: {
     type: "model_step_started" | "model_step_finished";
   }) => void;
+  persistUserMessage: (input: { text: string }) => void;
   paths: {
     runLog: string;
   };
@@ -228,6 +229,16 @@ export function createRunPersistence(input: {
         event: {
           type: step.type,
           timestamp: getTimestamp(),
+        },
+      });
+    },
+    persistUserMessage(userMessage) {
+      appendRunLogEvent({
+        filePath: runLogPath,
+        event: {
+          type: "user_message",
+          timestamp: getTimestamp(),
+          text: userMessage.text,
         },
       });
     },

@@ -60,6 +60,12 @@ export type ModelStepEvent = {
   timestamp: string;
 };
 
+export type UserMessageEvent = {
+  type: "user_message";
+  timestamp: string;
+  text: string;
+};
+
 export type RunLogEvent =
   | RunSessionMetaEvent
   | RunStatusChangedEvent
@@ -69,6 +75,7 @@ export type RunLogEvent =
   | ModelStreamFinishedEvent
   | ModelToolErrorEvent
   | ModelStepEvent
+  | UserMessageEvent
   | PersistedToolCall
   | PersistedToolResult
   | PersistedApprovalEvent;

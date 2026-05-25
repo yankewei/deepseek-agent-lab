@@ -1,7 +1,9 @@
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { stepCountIs, streamText } from "ai";
+import { createInterface } from "node:readline";
+import { stepCountIs, streamText, type ModelMessage, type TextPart, type ToolCallPart, type ToolResultPart } from "ai";
 import { deepseek } from "@ai-sdk/deepseek";
+import type { JSONValue } from "@ai-sdk/provider";
 import {
   formatAgentError,
   formatExecutionEvent,
@@ -14,34 +16,7 @@ import { createTools } from "./src/tools/index";
 import { createRunPersistence } from "./src/run-persistence";
 import { getProjectRootDirectory } from "./src/run-metadata";
 
-const userPrompt = process.argv.slice(2).join(" ").trim();
-const debug = process.env.DEBUG === "1";
-
-if (!userPrompt) {
-  console.error('Usage: bun run start "请分析当前项目"');
-  process.exit(1);
-}
-
-const runPersistence = createRunPersistence({
-  cwd: process.cwd(),
-  rootDir: getProjectRootDirectory({
-    cwd: process.cwd(),
-    rootDir: join(homedir(), ".disco"),
-  }),
-  userPrompt,
-  onExecutionEvent(event) {
-    if (debug) {
-      console.log(formatExecutionEvent(event));
-    }
-  },
-});
-const executionTracker = runPersistence.executionTracker;
-
-try {
-  const result = streamText({
-    model: deepseek("deepseek-v4-pro"),
-
-    system: `
+const SYSTEM_PROMPT = `
 You are a coding agent.
 
 You can:
@@ -70,7 +45,7 @@ Use listFiles, readFile, and searchFiles for file inspection.
 Use editFile for small, exact replacements in project files, then run validation when appropriate.
 Use applyPatch for multi-file changes, then run validation when appropriate.
 Use gitStatus after edits to inspect the working tree state.
-Use getDiff after gitStatus to inspect changed files before summarizing.
+Use getDiff after gitStatus to inspect the actual changed files before summarizing.
 Use runCommand for command execution.
 runCommand can run these exact commands without approval: pwd, bun test, bun run build:bin, bun --version.
 runCommand asks for approval before dependency changes such as bun install, bun add, or bun remove; include a clear reason.
@@ -79,33 +54,75 @@ If a command is blocked, explain what you were trying to learn and choose a safe
 After changing files:
 - run validation when it is appropriate for the change
 - call gitStatus to inspect the final working tree state
-- call getDiff to inspect the actual changed files before summarizing
+- call getDiff after gitStatus to inspect the actual changed files before summarizing
 - include the working tree status, change summary, and validation result in the final response
 - if validation was not run, say why
-`,
+`;
 
-    prompt: userPrompt,
+const initialPrompt = process.argv.slice(2).join(" ").trim();
+const debug = process.env.DEBUG === "1";
 
+if (!initialPrompt) {
+  console.error('Usage: bun run start "请分析当前项目"');
+  process.exit(1);
+}
+
+const runPersistence = createRunPersistence({
+  cwd: process.cwd(),
+  rootDir: getProjectRootDirectory({
+    cwd: process.cwd(),
+    rootDir: join(homedir(), ".disco"),
+  }),
+  userPrompt: initialPrompt,
+  onExecutionEvent(event) {
+    if (debug) {
+      console.log(formatExecutionEvent(event));
+    }
+  },
+});
+
+const executionTracker = runPersistence.executionTracker;
+
+function toToolResultOutput(output: unknown): ToolResultPart['output'] {
+  if (typeof output === 'string') {
+    return { type: 'text', value: output };
+  }
+  return { type: 'json', value: output as JSONValue };
+}
+
+function closeOpenStreamSection(textSectionOpen: { value: boolean }, reasoningSectionOpen: { value: boolean }) {
+  if (textSectionOpen.value || reasoningSectionOpen.value) {
+    process.stdout.write("\n");
+    textSectionOpen.value = false;
+    reasoningSectionOpen.value = false;
+  }
+}
+
+async function runStream(messages: Array<ModelMessage>): Promise<void> {
+  const result = streamText({
+    model: deepseek("deepseek-v4-pro"),
+    system: SYSTEM_PROMPT,
+    messages,
     tools: createTools({
       executionTracker,
       approvalRecorder: runPersistence.approvalRecorder,
     }),
-
     stopWhen: stepCountIs(10),
   });
 
-  let textSectionOpen = false;
-  let reasoningSectionOpen = false;
+  const textSectionOpen = { value: false };
+  const reasoningSectionOpen = { value: false };
   let textBuffer = "";
   let reasoningBuffer = "";
 
-  function closeOpenStreamSection() {
-    if (textSectionOpen || reasoningSectionOpen) {
-      process.stdout.write("\n");
-      textSectionOpen = false;
-      reasoningSectionOpen = false;
-    }
-  }
+  type StepAccumulator = {
+    assistantText: string;
+    toolCalls: Array<{ toolCallId: string; toolName: string; input: unknown }>;
+    toolResults: Array<{ toolCallId: string; toolName: string; output: unknown }>;
+  };
+
+  const steps: StepAccumulator[] = [];
+  let currentStep: StepAccumulator = { assistantText: "", toolCalls: [], toolResults: [] };
 
   for await (const event of result.fullStream) {
     switch (event.type) {
@@ -118,13 +135,15 @@ After changing files:
               "🚀 RUN STARTED",
               formatValue({
                 runId: runPersistence.runId,
-                task: userPrompt,
+                task: messages[messages.length - 1]?.role === "user"
+                  ? String(messages[messages.length - 1].content)
+                  : "continue",
               }),
             ),
           );
         } else {
           const width = divider().length;
-          const taskLine = `Task: ${userPrompt}`;
+          const taskLine = `Task: ${messages[messages.length - 1]?.role === "user" ? String(messages[messages.length - 1].content) : "continue"}`;
           const truncated =
             taskLine.length > width - 4
               ? taskLine.slice(0, width - 7) + "..."
@@ -145,11 +164,36 @@ After changing files:
       }
 
       case "finish": {
-        closeOpenStreamSection();
+        closeOpenStreamSection(textSectionOpen, reasoningSectionOpen);
         runPersistence.persistModelStreamFinished({
           finishReason: event.finishReason,
           usage: event.totalUsage,
         });
+
+        // finalize last step
+        if (currentStep.assistantText || currentStep.toolCalls.length > 0 || currentStep.toolResults.length > 0) {
+          steps.push(currentStep);
+        }
+
+        // build messages from steps
+        for (const step of steps) {
+          const content: Array<TextPart | ToolCallPart> = [];
+          if (step.assistantText) {
+            content.push({ type: "text", text: step.assistantText });
+          }
+          for (const tc of step.toolCalls) {
+            content.push({ type: "tool-call", toolCallId: tc.toolCallId, toolName: tc.toolName, input: tc.input });
+          }
+          if (content.length > 0) {
+            messages.push({ role: "assistant", content });
+          }
+          for (const tr of step.toolResults) {
+            messages.push({
+              role: "tool",
+              content: [{ type: "tool-result", toolCallId: tr.toolCallId, toolName: tr.toolName, output: toToolResultOutput(tr.output) }],
+            });
+          }
+        }
 
         if (debug) {
           console.log(
@@ -171,69 +215,69 @@ After changing files:
       }
 
       case "reasoning-start": {
-        closeOpenStreamSection();
-
+        closeOpenStreamSection(textSectionOpen, reasoningSectionOpen);
         break;
       }
 
       case "reasoning-delta": {
         reasoningBuffer += getStreamText(event);
 
-        if (!reasoningSectionOpen) {
-          closeOpenStreamSection();
+        if (!reasoningSectionOpen.value) {
+          closeOpenStreamSection(textSectionOpen, reasoningSectionOpen);
           console.log(
             formatSection(`${palette.dim("[thinking...]")} 🧠 AI THINKING`),
           );
-          reasoningSectionOpen = true;
+          reasoningSectionOpen.value = true;
         }
 
         process.stdout.write(getStreamText(event));
-
         break;
       }
 
       case "reasoning-end": {
-        closeOpenStreamSection();
+        closeOpenStreamSection(textSectionOpen, reasoningSectionOpen);
         runPersistence.persistModelReasoning({
           text: reasoningBuffer,
         });
         reasoningBuffer = "";
-
         break;
       }
 
       case "text-start": {
-        closeOpenStreamSection();
-
+        closeOpenStreamSection(textSectionOpen, reasoningSectionOpen);
         break;
       }
 
       case "text-delta": {
         textBuffer += getStreamText(event);
+        currentStep.assistantText += getStreamText(event);
 
-        if (!textSectionOpen) {
-          closeOpenStreamSection();
+        if (!textSectionOpen.value) {
+          closeOpenStreamSection(textSectionOpen, reasoningSectionOpen);
           console.log(formatSection("💬 AI RESPONSE"));
-          textSectionOpen = true;
+          textSectionOpen.value = true;
         }
 
         process.stdout.write(getStreamText(event));
-
         break;
       }
 
       case "text-end": {
-        closeOpenStreamSection();
+        closeOpenStreamSection(textSectionOpen, reasoningSectionOpen);
         runPersistence.persistModelText({
           text: textBuffer,
         });
         textBuffer = "";
-
         break;
       }
 
       case "tool-call": {
-        closeOpenStreamSection();
+        closeOpenStreamSection(textSectionOpen, reasoningSectionOpen);
+        currentStep.toolCalls.push({
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          input: event.input,
+        });
         runPersistence.persistToolCall({
           toolCallId: event.toolCallId,
           toolName: event.toolName,
@@ -248,12 +292,16 @@ After changing files:
             }),
           ),
         );
-
         break;
       }
 
       case "tool-result": {
-        closeOpenStreamSection();
+        closeOpenStreamSection(textSectionOpen, reasoningSectionOpen);
+        currentStep.toolResults.push({
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          output: event.output,
+        });
         runPersistence.persistToolResult({
           toolCallId: event.toolCallId,
           toolName: event.toolName,
@@ -271,12 +319,11 @@ After changing files:
             ),
           );
         }
-
         break;
       }
 
       case "tool-error": {
-        closeOpenStreamSection();
+        closeOpenStreamSection(textSectionOpen, reasoningSectionOpen);
         runPersistence.persistModelToolError({
           toolCallId: event.toolCallId,
           toolName: event.toolName,
@@ -294,47 +341,84 @@ After changing files:
             ),
           );
         }
-
         break;
       }
 
       case "start-step": {
-        closeOpenStreamSection();
+        closeOpenStreamSection(textSectionOpen, reasoningSectionOpen);
+        if (currentStep.assistantText || currentStep.toolCalls.length > 0 || currentStep.toolResults.length > 0) {
+          steps.push(currentStep);
+        }
+        currentStep = { assistantText: "", toolCalls: [], toolResults: [] };
         runPersistence.persistModelStep({ type: "model_step_started" });
 
         if (debug) {
           console.log(formatSection("🧭 AI STEP"));
         }
-
         break;
       }
 
       case "finish-step": {
-        closeOpenStreamSection();
+        closeOpenStreamSection(textSectionOpen, reasoningSectionOpen);
         runPersistence.persistModelStep({ type: "model_step_finished" });
 
         if (debug) {
           console.log(formatSection("✓ STEP FINISHED"));
         }
-
         break;
       }
     }
   }
+}
 
-  runPersistence.updateStatus("completed");
-} catch (error) {
-  try {
-    runPersistence.updateStatus("failed");
-  } catch (persistenceError) {
-    const message =
-      persistenceError instanceof Error
-        ? persistenceError.message
-        : String(persistenceError);
-    console.error(formatAgentError({ code: "RUNTIME_ERROR", message }));
+async function main() {
+  const messages: Array<ModelMessage> = [];
+  messages.push({ role: "user", content: initialPrompt });
+
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  function ask(question: string): Promise<string> {
+    return new Promise((resolve) => {
+      rl.question(question, resolve);
+    });
   }
 
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(formatAgentError({ code: "RUNTIME_ERROR", message }));
-  process.exit(1);
+  try {
+    while (true) {
+      await runStream(messages);
+
+      const userInput = await ask(
+        palette.dim("\n> Enter follow-up (or /exit): "),
+      );
+      const trimmed = userInput.trim();
+      if (trimmed === "/exit") {
+        break;
+      }
+      messages.push({ role: "user", content: trimmed });
+      runPersistence.persistUserMessage({ text: trimmed });
+    }
+
+    runPersistence.updateStatus("completed");
+  } catch (error) {
+    try {
+      runPersistence.updateStatus("failed");
+    } catch (persistenceError) {
+      const message =
+        persistenceError instanceof Error
+          ? persistenceError.message
+          : String(persistenceError);
+      console.error(formatAgentError({ code: "RUNTIME_ERROR", message }));
+    }
+
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(formatAgentError({ code: "RUNTIME_ERROR", message }));
+    process.exit(1);
+  } finally {
+    rl.close();
+  }
 }
+
+main();
