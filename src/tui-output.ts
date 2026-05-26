@@ -1,9 +1,24 @@
-import { Box, Container, Text, visibleWidth, truncateToWidth } from "@oh-my-pi/pi-tui";
+import {
+  Box,
+  Container,
+  Markdown,
+  Text,
+  visibleWidth,
+  truncateToWidth,
+} from "@earendil-works/pi-tui";
+import type { MarkdownTheme } from "@earendil-works/pi-tui";
 import {
   bold,
   white,
   gray,
   red,
+  cyan,
+  blue,
+  yellow,
+  dim,
+  italic,
+  underline,
+  strikethrough,
   bgCyan,
   bgBlue,
   bgGreen,
@@ -59,6 +74,25 @@ function formatCompactValue(value: Record<string, unknown>) {
     sorted: false,
   });
 }
+
+// ─── Markdown theme ───
+
+export const markdownTheme: MarkdownTheme = {
+  heading: (text) => bold(cyan(text)),
+  link: (text) => underline(blue(text)),
+  linkUrl: (text) => gray(text),
+  code: (text) => yellow(text),
+  codeBlock: (text) => gray(text),
+  codeBlockBorder: (text) => dim(text),
+  quote: (text) => italic(gray(text)),
+  quoteBorder: (text) => gray(text),
+  hr: (text) => dim(text),
+  listBullet: (text) => cyan(text),
+  bold: (text) => bold(text),
+  italic: (text) => italic(text),
+  strikethrough: (text) => strikethrough(text),
+  underline: (text) => underline(text),
+};
 
 // ─── Stream headers (lightweight bars for streaming sections) ───
 
@@ -213,4 +247,23 @@ export function getStreamText(event: unknown) {
   }
 
   return "";
+}
+
+// ─── Markdown rendering ───
+
+export function renderMarkdown(text: string): void {
+  const md = new Markdown(text, 0, 0, markdownTheme);
+  printComponent(md);
+}
+
+export async function renderMarkdownStream(
+  text: string,
+  lineDelayMs = 15,
+): Promise<void> {
+  const md = new Markdown(text, 0, 0, markdownTheme);
+  const lines = md.render(termWidth());
+  for (const line of lines) {
+    await new Promise((resolve) => setTimeout(resolve, lineDelayMs));
+    console.log(line);
+  }
 }
