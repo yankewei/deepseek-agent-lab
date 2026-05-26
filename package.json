@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^2.0.35",
+    "@oh-my-pi/pi-tui": "^15.3.2",
     "ai": "^6.0.184",
     "boxen": "^8.0.1",
     "picocolors": "^1.1.1",

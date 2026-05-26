@@ -6,12 +6,18 @@ import { deepseek } from "@ai-sdk/deepseek";
 import type { JSONValue } from "@ai-sdk/provider";
 import {
   formatAgentError,
-  formatExecutionEvent,
-  formatSection,
-  formatValue,
   getStreamText,
-} from "./src/cli-output";
-import { divider, palette } from "./src/terminal";
+  renderExecutionEvent,
+  renderResponseHeader,
+  renderRunFinished,
+  renderRunStarted,
+  renderStep,
+  renderThinkingHeader,
+  renderToolCall,
+  renderToolError,
+  renderToolResult,
+} from "./src/tui-output";
+import { palette } from "./src/terminal";
 import { createTools } from "./src/tools/index";
 import { createRunPersistence } from "./src/run-persistence";
 import { getProjectRootDirectory } from "./src/run-metadata";
@@ -76,7 +82,7 @@ const runPersistence = createRunPersistence({
   userPrompt: initialPrompt,
   onExecutionEvent(event) {
     if (debug) {
-      console.log(formatExecutionEvent(event));
+      renderExecutionEvent(event);
     }
   },
 });
@@ -129,36 +135,10 @@ async function runStream(messages: Array<ModelMessage>): Promise<void> {
       case "start": {
         runPersistence.persistModelStreamStarted();
 
-        if (debug) {
-          console.log(
-            formatSection(
-              "🚀 RUN STARTED",
-              formatValue({
-                runId: runPersistence.runId,
-                task: messages[messages.length - 1]?.role === "user"
-                  ? String(messages[messages.length - 1].content)
-                  : "continue",
-              }),
-            ),
-          );
-        } else {
-          const width = divider().length;
-          const taskLine = `Task: ${messages[messages.length - 1]?.role === "user" ? String(messages[messages.length - 1].content) : "continue"}`;
-          const truncated =
-            taskLine.length > width - 4
-              ? taskLine.slice(0, width - 7) + "..."
-              : taskLine;
-          console.log(
-            [
-              "",
-              palette.dim(divider()),
-              palette.title("🚀 " + truncated),
-              palette.dim(`Run: ${runPersistence.runId}`),
-              palette.dim(divider()),
-              "",
-            ].join("\n"),
-          );
-        }
+        const task = messages[messages.length - 1]?.role === "user"
+          ? String(messages[messages.length - 1].content)
+          : "continue";
+        renderRunStarted(task, runPersistence.runId);
 
         break;
       }
@@ -195,21 +175,7 @@ async function runStream(messages: Array<ModelMessage>): Promise<void> {
           }
         }
 
-        if (debug) {
-          console.log(
-            formatSection(
-              "🏁 RUN FINISHED",
-              formatValue({
-                finishReason: event.finishReason,
-                usage: event.totalUsage,
-              }),
-            ),
-          );
-        } else {
-          console.log(
-            palette.dim(`🏁 Finished · finishReason: ${event.finishReason}`),
-          );
-        }
+        renderRunFinished(event.finishReason, event.totalUsage);
 
         break;
       }
@@ -224,9 +190,7 @@ async function runStream(messages: Array<ModelMessage>): Promise<void> {
 
         if (!reasoningSectionOpen.value) {
           closeOpenStreamSection(textSectionOpen, reasoningSectionOpen);
-          console.log(
-            formatSection(`${palette.dim("[thinking...]")} 🧠 AI THINKING`),
-          );
+          renderThinkingHeader();
           reasoningSectionOpen.value = true;
         }
 
@@ -254,7 +218,7 @@ async function runStream(messages: Array<ModelMessage>): Promise<void> {
 
         if (!textSectionOpen.value) {
           closeOpenStreamSection(textSectionOpen, reasoningSectionOpen);
-          console.log(formatSection("💬 AI RESPONSE"));
+          renderResponseHeader();
           textSectionOpen.value = true;
         }
 
@@ -283,15 +247,7 @@ async function runStream(messages: Array<ModelMessage>): Promise<void> {
           toolName: event.toolName,
           input: event.input,
         });
-        console.log(
-          formatSection(
-            `${palette.dim("[running...]")} 🔧 TOOL CALL: ${event.toolName}`,
-            formatValue({
-              input: event.input,
-              toolCallId: event.toolCallId,
-            }),
-          ),
-        );
+        renderToolCall(event.toolName, event.input, event.toolCallId);
         break;
       }
 
@@ -308,17 +264,7 @@ async function runStream(messages: Array<ModelMessage>): Promise<void> {
           output: event.output,
         });
 
-        if (debug) {
-          console.log(
-            formatSection(
-              `✅ TOOL RESULT: ${event.toolName}`,
-              formatValue({
-                output: event.output,
-                toolCallId: event.toolCallId,
-              }),
-            ),
-          );
-        }
+        if (debug) { renderToolResult(event.toolName, event.output, event.toolCallId); }
         break;
       }
 
@@ -330,17 +276,7 @@ async function runStream(messages: Array<ModelMessage>): Promise<void> {
           error: event.error,
         });
 
-        if (debug) {
-          console.log(
-            formatSection(
-              `❌ TOOL ERROR: ${event.toolName}`,
-              formatValue({
-                error: event.error,
-                toolCallId: event.toolCallId,
-              }),
-            ),
-          );
-        }
+        if (debug) { renderToolError(event.toolName, event.error, event.toolCallId); }
         break;
       }
 
@@ -352,9 +288,7 @@ async function runStream(messages: Array<ModelMessage>): Promise<void> {
         currentStep = { assistantText: "", toolCalls: [], toolResults: [] };
         runPersistence.persistModelStep({ type: "model_step_started" });
 
-        if (debug) {
-          console.log(formatSection("🧭 AI STEP"));
-        }
+        if (debug) { renderStep("🧭 AI STEP"); }
         break;
       }
 
@@ -362,9 +296,7 @@ async function runStream(messages: Array<ModelMessage>): Promise<void> {
         closeOpenStreamSection(textSectionOpen, reasoningSectionOpen);
         runPersistence.persistModelStep({ type: "model_step_finished" });
 
-        if (debug) {
-          console.log(formatSection("✓ STEP FINISHED"));
-        }
+        if (debug) { renderStep("✓ STEP FINISHED"); }
         break;
       }
     }
