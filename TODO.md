@@ -8,6 +8,7 @@ this file stays short and easy to scan.
 - Learning path: [`docs/learning-path.md`](docs/learning-path.md)
 - Runtime architecture: [`docs/runtime.md`](docs/runtime.md)
 - Resume roadmap: [`docs/resume-roadmap.md`](docs/resume-roadmap.md)
+- Terminal UI TODO: [`docs/terminal-ui-todo.md`](docs/terminal-ui-todo.md)
 
 ## Current Priority
 

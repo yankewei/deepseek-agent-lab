@@ -1,10 +1,15 @@
-import { Markdown } from "@earendil-works/pi-tui";
+import {
+  Markdown,
+  truncateToWidth,
+  visibleWidth,
+  wrapTextWithAnsi,
+} from "@earendil-works/pi-tui";
 import type { Component, Editor } from "@earendil-works/pi-tui";
 import { gray, bold, cyan } from "picocolors";
 import { markdownTheme } from "../tui-output";
 
 interface Message {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "event";
   text: string;
 }
 
@@ -14,10 +19,36 @@ export class HistoryPanel implements Component {
   private cachedWidth?: number;
   private cachedLines?: string[];
 
-  addMessage(role: "user" | "assistant", text: string): void {
+  addMessage(role: Message["role"], text: string): number {
     this.messages.push({ role, text });
     this.scrollOffset = 0;
     this.cachedLines = undefined;
+    return this.messages.length - 1;
+  }
+
+  updateMessage(index: number, text: string): void {
+    const message = this.messages[index];
+
+    if (!message) return;
+
+    message.text = text;
+    this.cachedLines = undefined;
+  }
+
+  toPlainText(): string {
+    return this.messages
+      .map((message) => {
+        if (message.role === "user") {
+          return `You: ${message.text}`;
+        }
+
+        if (message.role === "event") {
+          return `- ${message.text}`;
+        }
+
+        return `Assistant: ${message.text}`;
+      })
+      .join("\n\n");
   }
 
   scrollUp(lines: number): void {
@@ -38,7 +69,9 @@ export class HistoryPanel implements Component {
       const msg = this.messages[i];
 
       if (msg.role === "user") {
-        lines.push(bold(cyan("You: ")) + msg.text);
+        lines.push(...this.renderUserMessage(msg.text, width));
+      } else if (msg.role === "event") {
+        lines.push(...this.renderEventMessage(msg.text, width));
       } else {
         const md = new Markdown(msg.text, 0, 0, markdownTheme);
         lines.push(...md.render(width));
@@ -52,6 +85,50 @@ export class HistoryPanel implements Component {
     this.cachedWidth = width;
     this.cachedLines = lines;
     return lines;
+  }
+
+  private renderUserMessage(text: string, width: number): string[] {
+    const prefix = bold(cyan("You: "));
+    const prefixWidth = visibleWidth(prefix);
+
+    if (width <= prefixWidth + 1) {
+      return [truncateToWidth(prefix + text, width)];
+    }
+
+    const contentWidth = Math.max(1, width - prefixWidth);
+    const wrapped = text.split("\n").flatMap((line) =>
+      line
+        ? wrapTextWithAnsi(line, contentWidth)
+        : [""]
+    );
+    const lines = wrapped.length > 0 ? wrapped : [""];
+    const continuationPrefix = " ".repeat(prefixWidth);
+
+    return lines.map((line, index) =>
+      index === 0 ? prefix + line : continuationPrefix + line
+    );
+  }
+
+  private renderEventMessage(text: string, width: number): string[] {
+    const prefix = gray("• ");
+    const prefixWidth = visibleWidth(prefix);
+
+    if (width <= prefixWidth + 1) {
+      return [truncateToWidth(prefix + text, width)];
+    }
+
+    const contentWidth = Math.max(1, width - prefixWidth);
+    const wrapped = text.split("\n").flatMap((line) =>
+      line
+        ? wrapTextWithAnsi(line, contentWidth)
+        : [""]
+    );
+    const lines = wrapped.length > 0 ? wrapped : [""];
+    const continuationPrefix = " ".repeat(prefixWidth);
+
+    return lines.map((line, index) =>
+      gray(index === 0 ? prefix + line : continuationPrefix + line)
+    );
   }
 
   render(width: number, maxHeight?: number): string[] {

@@ -5,11 +5,17 @@ import { deepseek } from "@ai-sdk/deepseek";
 import { gray, cyan } from "picocolors";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { inspect } from "node:util";
 import { HistoryPanel, StatusPanel, ChatLayout } from "./chat-layout";
+import { ApprovalPanel } from "./approval-panel";
+import { FullscreenTerminal } from "./fullscreen-terminal";
+import { parseSgrMouseWheel } from "./mouse";
+import { copyToClipboard } from "./clipboard";
 import { getStreamText } from "../tui-output";
 import { createTools } from "../tools/index";
 import { createRunPersistence } from "../run-persistence";
 import { getProjectRootDirectory } from "../run-metadata";
+import type { ApprovalPrompt, ApprovalResult } from "../approval";
 
 export async function startChatApp(options: {
   initialPrompt: string;
@@ -33,7 +39,7 @@ export async function startChatApp(options: {
     },
   });
 
-  const terminal = new ProcessTerminal();
+  const terminal = new FullscreenTerminal(new ProcessTerminal());
   const tui = new TUI(terminal);
 
   const history = new HistoryPanel();
@@ -56,7 +62,39 @@ export async function startChatApp(options: {
   tui.addChild(layout);
   tui.setFocus(editor);
 
+  let isApprovalPromptOpen = false;
+  const stopApp = (runStatus: "completed" | "interrupted") => {
+    tui.stop();
+    runPersistence.updateStatus(runStatus);
+    process.exit(0);
+  };
+  const approvalPrompt = createTuiApprovalPrompt({
+    tui,
+    editor,
+    setOpen: (open) => {
+      isApprovalPromptOpen = open;
+    },
+  });
+
   tui.addInputListener((data) => {
+    const wheelDirection = parseSgrMouseWheel(data);
+
+    if (wheelDirection === "up" && terminal.isMouseWheelEnabled()) {
+      history.scrollUp(5);
+      tui.requestRender();
+      return { consume: true };
+    }
+
+    if (wheelDirection === "down" && terminal.isMouseWheelEnabled()) {
+      history.scrollDown(5);
+      tui.requestRender();
+      return { consume: true };
+    }
+
+    if (matchesKey(data, Key.ctrl("c")) && !isApprovalPromptOpen) {
+      stopApp("interrupted");
+      return { consume: true };
+    }
     if (matchesKey(data, Key.pageUp)) {
       history.scrollUp(3);
       tui.requestRender();
@@ -84,9 +122,36 @@ export async function startChatApp(options: {
     if (!trimmed) return;
 
     if (trimmed === "/exit") {
-      tui.stop();
-      runPersistence.updateStatus("completed");
-      process.exit(0);
+      stopApp("completed");
+    }
+
+    if (trimmed === "/copy") {
+      copyToClipboard(terminal, history.toPlainText());
+      history.addMessage("event", "Copied conversation history to clipboard.");
+      editor.setText("");
+      tui.requestRender();
+      return;
+    }
+
+    if (trimmed === "/mouse" || trimmed === "/mouse on" || trimmed === "/mouse off") {
+      const enableMouseWheel = trimmed === "/mouse"
+        ? !terminal.isMouseWheelEnabled()
+        : trimmed === "/mouse on";
+
+      if (enableMouseWheel) {
+        terminal.enableMouseWheel();
+        history.addMessage(
+          "event",
+          "Mouse wheel scrolling enabled. Native mouse selection may require Shift-drag.",
+        );
+      } else {
+        terminal.disableMouseWheel();
+        history.addMessage("event", "Mouse wheel scrolling disabled. Native mouse selection restored.");
+      }
+
+      editor.setText("");
+      tui.requestRender();
+      return;
     }
 
     isRunning = true;
@@ -98,24 +163,115 @@ export async function startChatApp(options: {
     messages.push({ role: "user", content: text.trim() });
     runPersistence.persistUserMessage({ text: text.trim() });
 
-    await runAgentTurn(
-      messages,
-      history,
-      status,
-      tui,
-      systemPrompt,
-      runPersistence,
-      debug,
-    );
-
-    isRunning = false;
+    try {
+      await runAgentTurnSafely(
+        messages,
+        history,
+        status,
+        tui,
+        systemPrompt,
+        runPersistence,
+        approvalPrompt,
+      );
+    } finally {
+      isRunning = false;
+    }
   };
+
+  if (initialPrompt) {
+    history.addMessage("user", initialPrompt);
+  }
 
   tui.start();
 
   // Auto-start first turn if initialPrompt is provided
   if (initialPrompt) {
     isRunning = true;
+    try {
+      await runAgentTurnSafely(
+        messages,
+        history,
+        status,
+        tui,
+        systemPrompt,
+        runPersistence,
+        approvalPrompt,
+      );
+    } finally {
+      isRunning = false;
+    }
+  }
+}
+
+function formatToolHistoryEvent(
+  kind: "call" | "result" | "error",
+  toolName: string,
+  value: unknown,
+): string {
+  const label = kind === "call"
+    ? "Tool call"
+    : kind === "result"
+    ? "Tool result"
+    : "Tool error";
+  const summary = inspect(value, {
+    colors: false,
+    compact: true,
+    depth: 2,
+    maxArrayLength: 5,
+    maxStringLength: 240,
+    breakLength: 100,
+  });
+  const compactSummary = summary.replace(/\s+/g, " ").trim();
+  const maxLength = 600;
+
+  return `${label}: ${toolName}${
+    compactSummary
+      ? ` ${compactSummary.slice(0, maxLength)}${
+        compactSummary.length > maxLength ? "..." : ""
+      }`
+      : ""
+  }`;
+}
+
+function createTuiApprovalPrompt(options: {
+  tui: TUI;
+  editor: Editor;
+  setOpen: (open: boolean) => void;
+}): ApprovalPrompt {
+  return async (request) => {
+    return await new Promise<ApprovalResult>((resolve) => {
+      options.setOpen(true);
+
+      const panel = new ApprovalPanel(request, (result) => {
+        handle.hide();
+        options.setOpen(false);
+        options.tui.setFocus(options.editor);
+        options.tui.requestRender();
+        resolve(result);
+      });
+      const handle = options.tui.showOverlay(panel, {
+        width: "80%",
+        maxHeight: "70%",
+        margin: 1,
+      });
+
+      options.tui.requestRender();
+    });
+  };
+}
+
+async function runAgentTurnSafely(
+  messages: ModelMessage[],
+  history: HistoryPanel,
+  status: StatusPanel,
+  tui: TUI,
+  systemPrompt: string,
+  runPersistence: ReturnType<typeof createRunPersistence>,
+  approvalPrompt: ApprovalPrompt,
+): Promise<void> {
+  runPersistence.updateStatus("running");
+
+  try {
     await runAgentTurn(
       messages,
       history,
@@ -123,9 +279,15 @@ export async function startChatApp(options: {
       tui,
       systemPrompt,
       runPersistence,
-      debug,
+      approvalPrompt,
     );
-    isRunning = false;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    history.addMessage("assistant", `**Error:** ${message}`);
+    runPersistence.updateStatus("failed");
+  } finally {
+    status.clear();
+    tui.requestRender();
   }
 }
 
@@ -136,7 +298,7 @@ async function runAgentTurn(
   tui: TUI,
   systemPrompt: string,
   runPersistence: ReturnType<typeof createRunPersistence>,
-  debug?: boolean,
+  approvalPrompt: ApprovalPrompt,
 ): Promise<void> {
   const executionTracker = runPersistence.executionTracker;
 
@@ -147,12 +309,14 @@ async function runAgentTurn(
     tools: createTools({
       executionTracker,
       approvalRecorder: runPersistence.approvalRecorder,
+      prompt: approvalPrompt,
     }),
     stopWhen: stepCountIs(10),
   });
 
   let textBuffer = "";
   let reasoningBuffer = "";
+  let streamingAssistantMessageIndex: number | undefined;
 
   type StepAccumulator = {
     assistantText: string;
@@ -263,6 +427,9 @@ async function runAgentTurn(
 
       case "text-start": {
         textBuffer = "";
+        streamingAssistantMessageIndex = history.addMessage("assistant", "");
+        status.clear();
+        tui.requestRender();
         break;
       }
 
@@ -270,17 +437,25 @@ async function runAgentTurn(
         const delta = getStreamText(event);
         textBuffer += delta;
         currentStep.assistantText += delta;
-        status.setResponse(textBuffer);
+        if (streamingAssistantMessageIndex === undefined) {
+          streamingAssistantMessageIndex = history.addMessage("assistant", "");
+        }
+        history.updateMessage(streamingAssistantMessageIndex, textBuffer);
         tui.requestRender();
         break;
       }
 
       case "text-end": {
         runPersistence.persistModelText({ text: textBuffer });
-        history.addMessage("assistant", textBuffer);
+        if (streamingAssistantMessageIndex === undefined) {
+          history.addMessage("assistant", textBuffer);
+        } else {
+          history.updateMessage(streamingAssistantMessageIndex, textBuffer);
+        }
         status.clear();
         tui.requestRender();
         textBuffer = "";
+        streamingAssistantMessageIndex = undefined;
         break;
       }
 
@@ -295,10 +470,11 @@ async function runAgentTurn(
           toolName: event.toolName,
           input: event.input,
         });
-        if (debug) {
-          history.addMessage("assistant", `🔧 调用工具: ${event.toolName}`);
-          tui.requestRender();
-        }
+        history.addMessage(
+          "event",
+          formatToolHistoryEvent("call", event.toolName, event.input),
+        );
+        tui.requestRender();
         break;
       }
 
@@ -313,10 +489,11 @@ async function runAgentTurn(
           toolName: event.toolName,
           output: event.output,
         });
-        if (debug) {
-          history.addMessage("assistant", `✅ 工具结果: ${event.toolName}`);
-          tui.requestRender();
-        }
+        history.addMessage(
+          "event",
+          formatToolHistoryEvent("result", event.toolName, event.output),
+        );
+        tui.requestRender();
         break;
       }
 
@@ -326,10 +503,11 @@ async function runAgentTurn(
           toolName: event.toolName,
           error: event.error,
         });
-        if (debug) {
-          history.addMessage("assistant", `❌ 工具错误: ${event.toolName}`);
-          tui.requestRender();
-        }
+        history.addMessage(
+          "event",
+          formatToolHistoryEvent("error", event.toolName, event.error),
+        );
+        tui.requestRender();
         break;
       }
 
