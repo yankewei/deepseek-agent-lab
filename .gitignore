@@ -1,9 +1,12 @@
 .env
 .disco/
-node_modules/
 dist/
-build/
-.next/
-coverage/
 *.log
 .DS_Store
+
+# Go build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+/disco
