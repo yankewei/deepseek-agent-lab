@@ -17,11 +17,11 @@ const (
 type CommandPolicyCode string
 
 const (
-	CodeLowRiskCommandAllowed            CommandPolicyCode = "LOW_RISK_COMMAND_ALLOWED"
-	CodeDependencyChangeRequiresApproval CommandPolicyCode = "DEPENDENCY_CHANGE_REQUIRES_APPROVAL"
-	CodeCommandEmpty                     CommandPolicyCode = "COMMAND_EMPTY"
-	CodeShellOperatorBlocked             CommandPolicyCode = "SHELL_OPERATOR_BLOCKED"
-	CodeCommandNotAllowed                CommandPolicyCode = "COMMAND_NOT_ALLOWED"
+	CodeLowRiskCommandAllowed CommandPolicyCode = "LOW_RISK_COMMAND_ALLOWED"
+	CodeCommandRequiresApproval CommandPolicyCode = "COMMAND_REQUIRES_APPROVAL"
+	CodeCommandEmpty            CommandPolicyCode = "COMMAND_EMPTY"
+	CodeShellOperatorBlocked    CommandPolicyCode = "SHELL_OPERATOR_BLOCKED"
+	CodeCommandNotAllowed       CommandPolicyCode = "COMMAND_NOT_ALLOWED"
 )
 
 // Decision is the result of policy evaluation.
@@ -36,12 +36,37 @@ type Decision struct {
 var (
 	blockedShellTokens = []string{"&&", "||", ";", "|", ">", "<", "`", "$(", "$(("}
 	allowedCommands    = map[string]struct{}{
-		"pwd":               {},
+		"pwd": {},
+		// bun
 		"bun test":          {},
 		"bun run build:bin": {},
 		"bun --version":     {},
+		// npm
+		"npm test":      {},
+		"npm run build": {},
+		"npm --version": {},
+		// yarn
+		"yarn test":     {},
+		"yarn build":    {},
+		"yarn --version": {},
+		// pnpm
+		"pnpm test":      {},
+		"pnpm run build": {},
+		"pnpm --version": {},
+		// go
+		"go test":     {},
+		"go build":    {},
+		"go version":  {},
+		"go mod tidy": {},
+		// cargo
+		"cargo test":     {},
+		"cargo build":    {},
+		"cargo --version": {},
+		// make
+		"make":       {},
+		"make test":  {},
+		"make build": {},
 	}
-	approvablePrefixes = []string{"bun install", "bun add", "bun remove"}
 )
 
 // Evaluate determines whether a command is allowed, requires approval, or is forbidden.
@@ -65,17 +90,13 @@ func Evaluate(command string) Decision {
 		return Decision{Type: "allow", Code: CodeLowRiskCommandAllowed, Reason: "Known low-risk project command.", Command: normalized}
 	}
 
-	if prefix := GetApprovablePrefix(normalized); prefix != "" {
-		return Decision{
-			Type:      "prompt",
-			Code:      CodeDependencyChangeRequiresApproval,
-			Reason:    "Dependency command requires user approval.",
-			Command:   normalized,
-			RiskLevel: RiskMedium,
-		}
+	return Decision{
+		Type:      "prompt",
+		Code:      CodeCommandRequiresApproval,
+		Reason:    "Command requires user approval.",
+		Command:   normalized,
+		RiskLevel: RiskMedium,
 	}
-
-	return Decision{Type: "forbidden", Code: CodeCommandNotAllowed, Reason: "Command is not allowed: " + normalized, Command: normalized}
 }
 
 // RuntimePolicy allows dynamic command prefix allowances during a session.
@@ -117,12 +138,15 @@ func hasShellOperator(cmd string) bool {
 	return false
 }
 
-// GetApprovablePrefix returns the matching approvable prefix for a command.
+// GetApprovablePrefix returns a suggested prefix for runtime policy approval.
+// It returns the first two space-separated tokens, or the full command if there is only one token.
 func GetApprovablePrefix(cmd string) string {
-	for _, prefix := range approvablePrefixes {
-		if cmd == prefix || strings.HasPrefix(cmd, prefix+" ") {
-			return prefix
-		}
+	parts := strings.Fields(cmd)
+	if len(parts) >= 2 {
+		return parts[0] + " " + parts[1]
+	}
+	if len(parts) == 1 {
+		return parts[0]
 	}
 	return ""
 }

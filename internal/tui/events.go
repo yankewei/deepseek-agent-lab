@@ -1,10 +1,15 @@
 package tui
 
-import "github.com/yankewei/ds-coding-agent/internal/llm"
+import (
+	"context"
+
+	"github.com/yankewei/ds-coding-agent/internal/llm"
+)
 
 // streamStartedMsg carries the event channel when a stream begins.
 type streamStartedMsg struct {
 	events <-chan llm.Event
+	cancel context.CancelFunc
 }
 
 // userSubmittedMsg signals the user pressed submit.
@@ -31,16 +36,4 @@ type turnDoneMsg struct{}
 // errorMsg carries an error from the agent goroutine.
 type errorMsg struct {
 	err error
-}
-
-// statusUpdateMsg updates the status panel text.
-type statusUpdateMsg struct {
-	mode statusMode
-	text string
-}
-
-// historyAppendMsg appends rendered text to history.
-type historyAppendMsg struct {
-	role string
-	text string
 }

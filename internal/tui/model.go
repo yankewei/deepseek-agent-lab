@@ -7,9 +7,9 @@ import (
 	"os"
 	"strings"
 
-	"charm.land/bubbles/v2/textarea"
-	"charm.land/bubbles/v2/viewport"
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/glamour"
 	"github.com/sashabaranov/go-openai"
@@ -24,9 +24,11 @@ import (
 // Model is the Bubble Tea model for the agent TUI.
 type Model struct {
 	width, height int
-	history       viewport.Model
-	editor        textarea.Model
-	status        statusState
+
+	messageList *MessageList
+	editor      textinput.Model
+	statusLine  *StatusLine
+	keys        KeyMap
 
 	// Agent config
 	client       *openai.Client
@@ -42,44 +44,33 @@ type Model struct {
 	// Conversation state
 	messages         []llm.Message
 	isRunning        bool
-	assistantBuf     strings.Builder
-	reasoningBuf     strings.Builder
-	pendingToolCalls []llm.ToolCallDef
 	eventStream      <-chan llm.Event
-	historyContent   string
+	cancelStream     context.CancelFunc
+	thinkingBuf      string
+	pendingToolCalls []llm.ToolCallDef
+	toolCallInputs   map[string]string // toolID -> argsJSON
 
 	// Optional initial prompt to auto-start on init.
 	initialPrompt string
 
-	// Pending approval request displayed as a modal overlay.
-	approvalRequest *approvalRequestMsg
+	// Pending approval state.
+	approvalReq   *approval.Request
+	approvalResCh chan approval.Result
+	form          *huh.Form
 }
-
-type statusState struct {
-	mode statusMode
-	text string
-}
-
-type statusMode int
-
-const (
-	statusIdle statusMode = iota
-	statusThinking
-	statusResponse
-)
 
 // NewModel creates a new TUI model.
 func NewModel(client *openai.Client, modelName, systemPrompt string, registry *tools.Registry, tracker *execution.Tracker, initialPrompt string) *Model {
-	ta := textarea.New()
-	ta.Placeholder = "Send a message..."
-	ta.ShowLineNumbers = false
-	ta.Focus()
-	ta.SetWidth(80)
-	ta.SetHeight(3)
+	ti := textinput.New()
+	ti.Prompt = "> "
+	ti.Placeholder = ""
+	ti.Focus()
+	ti.SetWidth(80)
 
-	vp := viewport.New()
-	vp.SetWidth(80)
-	vp.SetHeight(20)
+	// Style the input so text is clearly visible.
+	styles := textinput.DefaultStyles(true)
+	styles.Focused.Prompt = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+	ti.SetStyles(styles)
 
 	var toolDefs []llm.ToolDefinition
 	for _, t := range registry.All() {
@@ -90,78 +81,80 @@ func NewModel(client *openai.Client, modelName, systemPrompt string, registry *t
 		})
 	}
 
-	// Initialize markdown renderer. Default to "dark" style because the
-	// light theme has poor contrast on light terminals (grey on white).
-	// Users can override via GLAMOUR_STYLE env var.
 	var renderer *glamour.TermRenderer
 	style := os.Getenv("GLAMOUR_STYLE")
 	if style == "" {
-		style = "dark"
+		style = "notty"
 	}
 	if r, err := glamour.NewTermRenderer(glamour.WithStylePath(style)); err == nil {
 		renderer = r
 	}
 
 	return &Model{
-		editor:        ta,
-		history:       vp,
-		client:        client,
-		modelName:     modelName,
-		systemPrompt:  systemPrompt,
-		registry:      registry,
-		tracker:       tracker,
-		toolDefs:      toolDefs,
-		renderer:      renderer,
-		status:        statusState{mode: statusIdle},
-		initialPrompt: initialPrompt,
+		editor:         ti,
+		messageList:    NewMessageList(),
+		statusLine:     NewStatusLine(),
+		keys:           DefaultKeyMap(),
+		client:         client,
+		modelName:      modelName,
+		systemPrompt:   systemPrompt,
+		registry:       registry,
+		tracker:        tracker,
+		toolDefs:       toolDefs,
+		renderer:       renderer,
+		toolCallInputs: make(map[string]string),
+		initialPrompt:  initialPrompt,
 	}
 }
 
 // Init implements tea.Model.
 func (m *Model) Init() tea.Cmd {
-	if m.initialPrompt != "" {
-		return func() tea.Msg {
-			return userSubmittedMsg{text: m.initialPrompt}
-		}
+	cmds := []tea.Cmd{
+		tea.RequestBackgroundColor,
+		m.statusLine.Init(),
 	}
-	return nil
+	if m.initialPrompt != "" {
+		cmds = append(cmds, func() tea.Msg {
+			return userSubmittedMsg{text: m.initialPrompt}
+		})
+	}
+	return tea.Batch(cmds...)
 }
 
 // submit starts a new agent turn with the given user text.
-func (m *Model) submit(text string) (*Model, tea.Cmd) {
+func (m *Model) submit(text string) tea.Cmd {
 	if m.isRunning || text == "" {
-		return m, nil
+		return nil
 	}
 	m.isRunning = true
 	if m.systemPrompt != "" && len(m.messages) == 0 {
 		m.messages = append(m.messages, llm.Message{Role: "system", Content: m.systemPrompt})
 	}
 	m.messages = append(m.messages, llm.Message{Role: "user", Content: text})
-	m.appendHistory("user", text)
-	m.assistantBuf.Reset()
-	m.reasoningBuf.Reset()
-	m.pendingToolCalls = nil
-	m.status = statusState{mode: statusResponse, text: "🚀 运行中..."}
-	return m, m.startStreamCmd()
+	m.messageList.Add(Message{Type: MsgUser, Content: text, Status: StatusDone})
+	m.statusLine.SetMode(ModeStreaming)
+	m.editor.Reset()
+	return m.startStreamCmd()
 }
 
-// startStreamCmd initiates the LLM stream.
+// startStreamCmd initiates the LLM stream with a cancellable context.
 func (m *Model) startStreamCmd() tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
+		ctx, cancel := context.WithCancel(context.Background())
 		events, err := llm.Stream(ctx, m.client, m.modelName, m.messages, m.toolDefs)
 		if err != nil {
+			cancel()
 			return errorMsg{err: err}
 		}
-		return streamStartedMsg{events: events}
+		return streamStartedMsg{events: events, cancel: cancel}
 	}
 }
 
-// executeToolsCmd runs pending tool calls in parallel.
-func (m *Model) executeToolsCmd() tea.Cmd {
+// executeToolsCmd runs the given tool calls in parallel.
+func (m *Model) executeToolsCmd(calls []llm.ToolCallDef) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
-		results := m.runTools(ctx, m.pendingToolCalls)
+		results := m.runTools(ctx, calls)
 		return toolResultsMsg{results: results}
 	}
 }
@@ -175,7 +168,7 @@ func (m *Model) runTools(ctx context.Context, calls []llm.ToolCallDef) []toolRes
 		g.Go(func() error {
 			tool := m.registry.Get(tc.Name)
 			if tool == nil {
-				results[i] = toolResult{ID: tc.ID, Content: fmt.Sprintf(`{"error": "unknown tool: %s"}`, tc.Name)}
+				results[i] = toolResult{ID: tc.ID, Name: tc.Name, Content: fmt.Sprintf(`{"error": "unknown tool: %s"}`, tc.Name)}
 				return nil
 			}
 
@@ -185,13 +178,13 @@ func (m *Model) runTools(ctx context.Context, calls []llm.ToolCallDef) []toolRes
 			output, err := tool.Execute(ctx, tc.Input)
 			if err != nil {
 				m.tracker.UpdateRecord(rec.ID, map[string]any{"status": execution.StatusFailed, "error": err.Error()})
-				results[i] = toolResult{ID: tc.ID, Content: fmt.Sprintf(`{"error": "%s"}`, err.Error())}
+				results[i] = toolResult{ID: tc.ID, Name: tc.Name, Content: fmt.Sprintf(`{"error": "%s"}`, err.Error()), Err: err}
 				return nil
 			}
 
 			m.tracker.UpdateRecord(rec.ID, map[string]any{"status": execution.StatusCompleted})
 			outJSON, _ := json.Marshal(output)
-			results[i] = toolResult{ID: tc.ID, Content: string(outJSON)}
+			results[i] = toolResult{ID: tc.ID, Name: tc.Name, Content: string(outJSON)}
 			return nil
 		})
 	}
@@ -200,39 +193,22 @@ func (m *Model) runTools(ctx context.Context, calls []llm.ToolCallDef) []toolRes
 	return results
 }
 
-func (m *Model) appendHistory(role, text string) {
-	switch role {
-	case "user":
-		prefix := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6")).Render("You: ")
-		m.historyContent += prefix + text + "\n\n"
-	case "event":
-		prefix := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render("• ")
-		m.historyContent += prefix + text + "\n\n"
-	case "assistant":
-		m.historyContent += text + "\n\n"
-	}
-	m.history.SetContent(m.historyContent)
-	m.history.GotoBottom()
-}
-
-func (m *Model) updateAssistantHistory() {
-	content := m.historyContent + m.assistantBuf.String()
-	m.history.SetContent(content)
-	m.history.GotoBottom()
-}
-
+// updateLayout recalculates component sizes based on terminal dimensions.
 func (m *Model) updateLayout() {
+	helpBarHeight := 1
 	editorHeight := lipgloss.Height(m.editor.View())
+
 	statusHeight := 0
-	if m.status.mode != statusIdle {
+	if !m.statusLine.IsIdle() {
 		statusHeight = 1
 	}
-	historyHeight := m.height - editorHeight - statusHeight - 1 // separator
-	if historyHeight < 5 {
-		historyHeight = 5
+
+	messageListHeight := m.height - helpBarHeight - editorHeight - statusHeight
+	if messageListHeight < 5 {
+		messageListHeight = 5
 	}
-	m.history.SetWidth(m.width)
-	m.history.SetHeight(historyHeight)
+
+	m.messageList.SetSize(m.width, messageListHeight)
 	m.editor.SetWidth(m.width)
 }
 
@@ -254,20 +230,20 @@ func (m *Model) SetPrompt(prompt approval.Prompt) {
 	}
 }
 
-// renderMarkdown renders Markdown source to a styled terminal string.
-// On failure it returns the original source unchanged.
-func (m *Model) renderMarkdown(src string) string {
-	if m.renderer == nil {
-		return src
+// renderHelpBar returns a one-line help bar showing available keys.
+func (m *Model) renderHelpBar() string {
+	bindings := m.keys.ShortHelp()
+	var parts []string
+	for _, b := range bindings {
+		h := b.Help()
+		parts = append(parts, h.Key+" "+h.Desc)
 	}
-	out, err := m.renderer.Render(src)
-	if err != nil {
-		return src
-	}
-	return strings.TrimSpace(out)
+	return lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render(strings.Join(parts, "  "))
 }
 
 type toolResult struct {
 	ID      string
+	Name    string
 	Content string
+	Err     error
 }

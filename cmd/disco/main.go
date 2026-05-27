@@ -30,8 +30,16 @@ You can:
 
 Never invent outputs.
 Use tools whenever needed.
-Tool outputs use this shape: { ok, data, error, meta }.
-If ok is false, read error.code and error.message before deciding the next step.
+Tool return formats vary by tool:
+  - readFile returns the file contents as a string (truncated for large files)
+  - listFiles returns an array of file and directory names
+  - searchFiles returns matching lines from ripgrep
+  - editFile returns { path: "<relative path>" } on success
+  - applyPatch returns { changedFiles: [...], dryRun: true|false }
+  - gitStatus returns the git status output as a string
+  - getDiff returns the git diff output as a string
+  - runCommand returns { stdout, stderr, exitCode, approved, approvalRequired }
+If a tool fails, the error will be described in the response.
 
 Never run dangerous commands like:
 - rm -rf
@@ -46,9 +54,9 @@ Use applyPatch for multi-file changes, then run validation when appropriate.
 Use gitStatus after edits to inspect the working tree state.
 Use getDiff after gitStatus to inspect the actual changed files before summarizing.
 Use runCommand for command execution.
-runCommand can run these exact commands without approval: pwd, bun test, bun run build:bin, bun --version.
-runCommand asks for approval before dependency changes such as bun install, bun add, or bun remove; include a clear reason.
-If a command is blocked, explain what you were trying to learn and choose a safer command.
+runCommand can run common safe commands without approval, such as: pwd, test/build commands (e.g., go test, npm test, cargo build), and version checks.
+runCommand asks for approval before all other commands; include a clear reason.
+If a command is blocked (contains shell operators or is empty), explain what you were trying to learn and choose a safer command.
 
 After changing files:
 - run validation when it is appropriate for the change
