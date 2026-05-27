@@ -18,8 +18,11 @@ const (
 
 type readFileTool struct{}
 
-func (t *readFileTool) Name() string        { return "readFile" }
-func (t *readFileTool) Description() string { return "Read a project file. Large files are truncated to 2000 lines or 50KB. Use offset/limit to read specific ranges." }
+func (t *readFileTool) Name() string   { return "readFile" }
+func (t *readFileTool) Effect() Effect { return EffectRead }
+func (t *readFileTool) Description() string {
+	return "Read a project file. Large files are truncated to 2000 lines or 50KB. Use offset/limit to read specific ranges."
+}
 func (t *readFileTool) Schema() map[string]any {
 	return map[string]any{
 		"type": "object",

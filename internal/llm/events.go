@@ -43,16 +43,6 @@ type EventToolCall struct {
 
 func (EventToolCall) eventMarker() {}
 
-// EventToolCallDelta carries a partial tool call delta.
-type EventToolCallDelta struct {
-	Index         int
-	ID            string
-	Name          string
-	ArgsJSONDelta string
-}
-
-func (EventToolCallDelta) eventMarker() {}
-
 // EventFinish signals the end of the stream.
 type EventFinish struct {
 	FinishReason     string

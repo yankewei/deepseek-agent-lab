@@ -19,9 +19,13 @@ var ProjectRoot string
 
 // Init sets the project root directory. Safe for concurrent use; later calls override.
 func Init(root string) {
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		abs = filepath.Clean(root)
+	}
 	mu.Lock()
-	projectRoot = root
-	ProjectRoot = root
+	projectRoot = filepath.Clean(abs)
+	ProjectRoot = projectRoot
 	mu.Unlock()
 }
 
@@ -34,33 +38,42 @@ func GetRoot() string {
 
 // Resolve validates that a path stays within the project root.
 func Resolve(relativePath string) (absolute string, relative string, err error) {
-	relativePath = filepath.Clean(relativePath)
+	root := GetRoot()
+	if root == "" {
+		return "", "", fmt.Errorf("project root is not initialized")
+	}
 
-	// Block path escapes.
-	if strings.Contains(relativePath, "..") {
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return "", "", err
+	}
+	rootAbs = filepath.Clean(rootAbs)
+
+	var targetAbs string
+	if filepath.IsAbs(relativePath) {
+		targetAbs = filepath.Clean(relativePath)
+	} else {
+		targetAbs = filepath.Join(rootAbs, filepath.Clean(relativePath))
+	}
+	targetAbs, err = filepath.Abs(targetAbs)
+	if err != nil {
+		return "", "", err
+	}
+	targetAbs = filepath.Clean(targetAbs)
+
+	rel, err := filepath.Rel(rootAbs, targetAbs)
+	if err != nil {
+		return "", "", err
+	}
+	if pathEscapes(rel) {
 		return "", "", fmt.Errorf("path escapes project root: %s", relativePath)
 	}
 
-	// Block absolute paths outside project.
-	if filepath.IsAbs(relativePath) {
-		if !strings.HasPrefix(relativePath, GetRoot()) {
-			return "", "", fmt.Errorf("absolute path outside project: %s", relativePath)
-		}
-		absolute = relativePath
-		rel, _ := filepath.Rel(GetRoot(), absolute)
-		relative = rel
-		return
-	}
-
-	absolute = filepath.Join(GetRoot(), relativePath)
-	relative = relativePath
-
-	// Block symlinks pointing outside project.
-	if isSymlinkEscape(absolute) {
+	if isSymlinkEscape(rootAbs, targetAbs) {
 		return "", "", fmt.Errorf("symlink escapes project root: %s", relativePath)
 	}
 
-	return
+	return targetAbs, rel, nil
 }
 
 // ResolveNewWritable validates a path for creating a new file.
@@ -84,22 +97,38 @@ func IsBlockedPath(relativePath string) bool {
 	return false
 }
 
-func isSymlinkEscape(path string) bool {
-	info, err := os.Lstat(path)
+func pathEscapes(rel string) bool {
+	return rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+func isSymlinkEscape(rootAbs, targetAbs string) bool {
+	realRoot, err := filepath.EvalSymlinks(rootAbs)
 	if err != nil {
-		return false
+		return true
 	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		target, err := os.Readlink(path)
+	realRoot = filepath.Clean(realRoot)
+
+	if _, err := os.Lstat(targetAbs); err == nil {
+		realTarget, err := filepath.EvalSymlinks(targetAbs)
 		if err != nil {
 			return true
 		}
-		if !filepath.IsAbs(target) {
-			target = filepath.Join(filepath.Dir(path), target)
-		}
-		if !strings.HasPrefix(filepath.Clean(target), GetRoot()) {
-			return true
-		}
+		return !isWithin(realRoot, filepath.Clean(realTarget))
 	}
-	return false
+
+	parent := filepath.Dir(targetAbs)
+	realParent, err := filepath.EvalSymlinks(parent)
+	if err != nil {
+		return false
+	}
+	realTarget := filepath.Join(realParent, filepath.Base(targetAbs))
+	return !isWithin(realRoot, filepath.Clean(realTarget))
+}
+
+func isWithin(root, target string) bool {
+	rel, err := filepath.Rel(root, target)
+	if err != nil {
+		return false
+	}
+	return !pathEscapes(rel)
 }

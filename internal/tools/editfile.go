@@ -13,6 +13,7 @@ import (
 type editFileTool struct{}
 
 func (t *editFileTool) Name() string        { return "editFile" }
+func (t *editFileTool) Effect() Effect      { return EffectWrite }
 func (t *editFileTool) Description() string { return "Replace one exact text block in one file" }
 func (t *editFileTool) Schema() map[string]any {
 	return map[string]any{

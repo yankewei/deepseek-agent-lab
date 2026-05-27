@@ -10,6 +10,7 @@ import (
 type getDiffTool struct{}
 
 func (t *getDiffTool) Name() string        { return "getDiff" }
+func (t *getDiffTool) Effect() Effect      { return EffectRead }
 func (t *getDiffTool) Description() string { return "Show the current git diff" }
 func (t *getDiffTool) Schema() map[string]any {
 	return map[string]any{

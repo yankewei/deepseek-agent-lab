@@ -13,6 +13,7 @@ import (
 type listFilesTool struct{}
 
 func (t *listFilesTool) Name() string        { return "listFiles" }
+func (t *listFilesTool) Effect() Effect      { return EffectRead }
 func (t *listFilesTool) Description() string { return "List files inside the current project" }
 func (t *listFilesTool) Schema() map[string]any {
 	return map[string]any{

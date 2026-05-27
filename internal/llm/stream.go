@@ -2,7 +2,9 @@ package llm
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/sashabaranov/go-openai"
@@ -156,5 +158,5 @@ func toOpenAIMessage(m Message) openai.ChatCompletionMessage {
 }
 
 func isEOF(err error) bool {
-	return err != nil && err.Error() == "EOF"
+	return errors.Is(err, io.EOF)
 }

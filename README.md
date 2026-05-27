@@ -79,6 +79,9 @@ prompt     -> ask the user for approval first
 forbidden  -> reject without running
 ```
 
+Only a small allowlist of commands runs immediately. Other non-blocked commands
+require explicit approval. Empty commands and shell operators are blocked.
+
 File tools are restricted to the current project. They block `../` escapes, absolute paths outside the project, and symlinks pointing outside.
 
 Write tools additionally block sensitive or generated paths: `.env`, `.git/`, `node_modules/`, `dist/`, `build/`, `.next/`, `bun.lock`.

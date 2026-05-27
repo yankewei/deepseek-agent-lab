@@ -11,6 +11,7 @@ import (
 type searchFilesTool struct{}
 
 func (t *searchFilesTool) Name() string        { return "searchFiles" }
+func (t *searchFilesTool) Effect() Effect      { return EffectRead }
 func (t *searchFilesTool) Description() string { return "Search project files with ripgrep (rg)" }
 func (t *searchFilesTool) Schema() map[string]any {
 	return map[string]any{

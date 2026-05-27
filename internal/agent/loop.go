@@ -13,7 +13,6 @@ import (
 	"github.com/yankewei/ds-coding-agent/internal/execution"
 	"github.com/yankewei/ds-coding-agent/internal/llm"
 	"github.com/yankewei/ds-coding-agent/internal/tools"
-	"golang.org/x/sync/errgroup"
 )
 
 // LoopConfig configures the agent loop.
@@ -47,7 +46,12 @@ func RunLoop(ctx context.Context, cfg LoopConfig, initialPrompt string) error {
 		})
 	}
 
-	for step := 0; step < cfg.MaxSteps; step++ {
+	maxSteps := cfg.MaxSteps
+	if maxSteps <= 0 {
+		maxSteps = 10
+	}
+
+	for step := 0; step < maxSteps; step++ {
 		if cfg.Debug {
 			fmt.Fprintf(os.Stderr, "[debug] step %d\n", step+1)
 		}
@@ -87,12 +91,9 @@ func RunLoop(ctx context.Context, cfg LoopConfig, initialPrompt string) error {
 		}
 		messages = append(messages, msg)
 
-		// Execute tools in parallel.
+		// Execute tools through the shared executor.
 		if len(toolCalls) > 0 {
-			results, err := executeTools(ctx, cfg, toolCalls)
-			if err != nil {
-				return err
-			}
+			results := executeTools(ctx, cfg, toolCalls)
 
 			for _, tr := range results {
 				messages = append(messages, llm.Message{
@@ -114,39 +115,20 @@ type toolResult struct {
 	Content string
 }
 
-func executeTools(ctx context.Context, cfg LoopConfig, calls []llm.ToolCallDef) ([]toolResult, error) {
-	g, ctx := errgroup.WithContext(ctx)
-	results := make([]toolResult, len(calls))
-
-	for i, tc := range calls {
-		i, tc := i, tc
-		g.Go(func() error {
-			tool := cfg.Registry.Get(tc.Name)
-			if tool == nil {
-				results[i] = toolResult{ID: tc.ID, Content: fmt.Sprintf(`{"error": "unknown tool: %s"}`, tc.Name)}
-				return nil
-			}
-
-			rec := cfg.Tracker.CreateRecord("tool", tc.Name, "", "")
-			cfg.Tracker.UpdateRecord(rec.ID, map[string]any{"status": execution.StatusRunning})
-
-			output, err := tool.Execute(ctx, tc.Input)
-			if err != nil {
-				cfg.Tracker.UpdateRecord(rec.ID, map[string]any{"status": execution.StatusFailed, "error": err.Error()})
-				results[i] = toolResult{ID: tc.ID, Content: fmt.Sprintf(`{"error": "%s"}`, err.Error())}
-				return nil
-			}
-
-			cfg.Tracker.UpdateRecord(rec.ID, map[string]any{"status": execution.StatusCompleted})
-
-			outJSON, _ := json.Marshal(output)
-			results[i] = toolResult{ID: tc.ID, Content: string(outJSON)}
-			return nil
-		})
+func executeTools(ctx context.Context, cfg LoopConfig, calls []llm.ToolCallDef) []toolResult {
+	toolCalls := make([]tools.Call, len(calls))
+	for i, call := range calls {
+		toolCalls[i] = tools.Call{ID: call.ID, Name: call.Name, Input: call.Input}
 	}
+	results := tools.Executor{
+		Registry: cfg.Registry,
+		Tracker:  cfg.Tracker,
+		Prompt:   cfg.Prompt,
+	}.Execute(ctx, toolCalls)
 
-	if err := g.Wait(); err != nil {
-		return nil, err
+	out := make([]toolResult, len(results))
+	for i, result := range results {
+		out[i] = toolResult{ID: result.ID, Content: result.Content}
 	}
-	return results, nil
+	return out
 }

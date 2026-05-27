@@ -3,6 +3,7 @@ package llm
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/sashabaranov/go-openai"
@@ -60,8 +61,8 @@ func TestToOpenAIMessage_ReasoningContent(t *testing.T) {
 }
 
 func TestIsEOF(t *testing.T) {
-	if !isEOF(errors.New("EOF")) {
-		t.Error("isEOF(EOF) = false")
+	if !isEOF(io.EOF) {
+		t.Error("isEOF(io.EOF) = false")
 	}
 	if isEOF(nil) {
 		t.Error("isEOF(nil) = true")
