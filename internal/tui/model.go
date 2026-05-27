@@ -184,6 +184,7 @@ func (m *Model) executeToolsCmd(calls []llm.ToolCallDef) tea.Cmd {
 
 // updateLayout recalculates component sizes based on terminal dimensions.
 func (m *Model) updateLayout() {
+	previousContentWidth := m.contentWidth
 	m.contentWidth = boundedContentWidth(m.width)
 
 	helpBarHeight := 1
@@ -201,7 +202,9 @@ func (m *Model) updateLayout() {
 
 	m.messageList.SetSize(m.contentWidth, messageListHeight)
 	m.editor.SetWidth(m.contentWidth)
-	m.rebuildRenderer()
+	if m.contentWidth != previousContentWidth || m.renderer == nil {
+		m.rebuildRenderer()
+	}
 }
 
 // SetPrompt rebuilds the tool registry with the given approval prompt.

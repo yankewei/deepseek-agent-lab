@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -109,6 +110,28 @@ func TestModelPersistsUserModelAndStatusEvents(t *testing.T) {
 	}
 	if events[7]["status"] != "completed" {
 		t.Fatalf("final status = %v, want completed", events[7]["status"])
+	}
+}
+
+func TestMessageListScrollSurvivesUpdateLayout(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 8})
+	m = updated.(*Model)
+
+	for i := 0; i < 20; i++ {
+		m.messageList.Add(Message{Type: MsgAssistant, Content: fmt.Sprintf("line %02d", i), Status: StatusDone})
+	}
+
+	bottom := m.messageList.viewport.YOffset()
+	if bottom == 0 {
+		t.Fatal("test setup should overflow the message list")
+	}
+
+	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyPgUp}))
+	m = updated.(*Model)
+
+	if got := m.messageList.viewport.YOffset(); got >= bottom {
+		t.Fatalf("YOffset = %d, want less than bottom %d", got, bottom)
 	}
 }
 
