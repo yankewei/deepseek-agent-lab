@@ -9,15 +9,20 @@ import (
 	"github.com/yankewei/ds-coding-agent/internal/approval"
 	"github.com/yankewei/ds-coding-agent/internal/execution"
 	"github.com/yankewei/ds-coding-agent/internal/policy"
+	"github.com/yankewei/ds-coding-agent/internal/runlog"
 )
 
 type runCommandTool struct {
 	tracker       *execution.Tracker
 	prompt        approval.Prompt
 	runtimePolicy *policy.RuntimePolicy
+	logger        *runlog.Logger
 }
 
 func (t *runCommandTool) Name() string { return "runCommand" }
+func (t *runCommandTool) Effect() Effect {
+	return EffectCommand
+}
 func (t *runCommandTool) Description() string {
 	return "Run a project command allowed by policy, asking for approval when required"
 }
@@ -65,8 +70,9 @@ func (t *runCommandTool) Execute(ctx context.Context, input json.RawMessage) (an
 
 	approvalRequired := decision.Type == "prompt"
 	approved := false
+	preApproved := approvalRequired && t.runtimePolicy.IsAllowed(args.Command)
 
-	if approvalRequired && !t.runtimePolicy.IsAllowed(args.Command) {
+	if approvalRequired && !preApproved {
 		if args.Reason == "" {
 			err := fmt.Errorf("approval reason is required for command: %s", args.Command)
 			t.tracker.UpdateRecord(rec.ID, map[string]any{"status": execution.StatusFailed, "error": err.Error()})
@@ -80,7 +86,7 @@ func (t *runCommandTool) Execute(ctx context.Context, input json.RawMessage) (an
 			amend = &approval.PolicyAmendment{Type: "allow-command-prefix", Prefix: prefix}
 		}
 
-		res, err := t.prompt.Request(ctx, approval.Request{
+		req := approval.Request{
 			Action:                   "run-command",
 			Title:                    "Run command requiring approval",
 			Subject:                  args.Command,
@@ -88,10 +94,19 @@ func (t *runCommandTool) Execute(ctx context.Context, input json.RawMessage) (an
 			PolicyReason:             decision.Reason,
 			SuggestedPolicyAmendment: amend,
 			Details:                  map[string]string{"Command": args.Command, "Reason": args.Reason},
-		})
+		}
+		approvalID := ""
+		if t.logger != nil {
+			id, _ := t.logger.AppendApprovalRequested(req, rec.ID)
+			approvalID = id
+		}
+		res, err := t.prompt.Request(ctx, req)
 		if err != nil {
 			t.tracker.UpdateRecord(rec.ID, map[string]any{"status": execution.StatusFailed, "error": err.Error()})
 			return nil, err
+		}
+		if t.logger != nil {
+			_ = t.logger.AppendApprovalResolved(approvalID, res, rec.ID)
 		}
 
 		if res.Decision == "deny" {
@@ -103,8 +118,9 @@ func (t *runCommandTool) Execute(ctx context.Context, input json.RawMessage) (an
 		if res.Decision == "always_allow_command_prefix" && res.PolicyAmendment != nil {
 			t.runtimePolicy.AllowPrefix(res.PolicyAmendment.Prefix)
 		}
-	} else if approvalRequired {
+	} else if preApproved {
 		approvalRequired = false
+		approved = true
 	}
 
 	t.tracker.UpdateRecord(rec.ID, map[string]any{"status": execution.StatusRunning})
@@ -134,30 +150,12 @@ func (t *runCommandTool) Execute(ctx context.Context, input json.RawMessage) (an
 }
 
 func splitCommand(cmd string) []string {
-	return splitWhitespace(cmd)
-}
-
-func splitWhitespace(s string) []string {
-	var parts []string
-	for _, f := range splitFields(s) {
-		if f != "" {
-			parts = append(parts, f)
-		}
-	}
-	return parts
-}
-
-func splitFields(s string) []string {
-	return splitCommandInternal(s)
-}
-
-func splitCommandInternal(s string) []string {
 	// Simple whitespace split; sufficient for our allowed command set.
 	var result []string
 	var current []rune
 	inQuote := false
 	quoteChar := rune(0)
-	for _, r := range s {
+	for _, r := range cmd {
 		switch {
 		case r == ' ' || r == '\t':
 			if inQuote {
@@ -188,5 +186,10 @@ func splitCommandInternal(s string) []string {
 
 // NewRunCommandTool creates the runCommand tool.
 func NewRunCommandTool(tracker *execution.Tracker, prompt approval.Prompt, runtimePolicy *policy.RuntimePolicy) Tool {
-	return &runCommandTool{tracker: tracker, prompt: prompt, runtimePolicy: runtimePolicy}
+	return NewRunCommandToolWithLogger(tracker, prompt, runtimePolicy, nil)
+}
+
+// NewRunCommandToolWithLogger creates the runCommand tool with optional run logging.
+func NewRunCommandToolWithLogger(tracker *execution.Tracker, prompt approval.Prompt, runtimePolicy *policy.RuntimePolicy, logger *runlog.Logger) Tool {
+	return &runCommandTool{tracker: tracker, prompt: prompt, runtimePolicy: runtimePolicy, logger: logger}
 }

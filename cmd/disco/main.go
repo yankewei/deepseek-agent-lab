@@ -12,6 +12,7 @@ import (
 	"github.com/yankewei/ds-coding-agent/internal/execution"
 	"github.com/yankewei/ds-coding-agent/internal/llm"
 	"github.com/yankewei/ds-coding-agent/internal/projectpath"
+	"github.com/yankewei/ds-coding-agent/internal/runlog"
 	"github.com/yankewei/ds-coding-agent/internal/tools"
 	"github.com/yankewei/ds-coding-agent/internal/tui"
 )
@@ -41,11 +42,9 @@ Tool return formats vary by tool:
   - runCommand returns { stdout, stderr, exitCode, approved, approvalRequired }
 If a tool fails, the error will be described in the response.
 
-Never run dangerous commands like:
-- rm -rf
-- sudo
-- reboot
-- shutdown
+Commands outside the allowlist require explicit user approval.
+Shell operators, shell expansions, and empty commands are blocked.
+Do not request approval for destructive commands unless the user explicitly asked for that exact operation.
 
 When you need to inspect the project, prefer reading files and running safe commands.
 Use listFiles, readFile, and searchFiles for file inspection.
@@ -54,8 +53,8 @@ Use applyPatch for multi-file changes, then run validation when appropriate.
 Use gitStatus after edits to inspect the working tree state.
 Use getDiff after gitStatus to inspect the actual changed files before summarizing.
 Use runCommand for command execution.
-runCommand can run common safe commands without approval, such as: pwd, test/build commands (e.g., go test, npm test, cargo build), and version checks.
-runCommand asks for approval before all other commands; include a clear reason.
+runCommand can run a small allowlist of commands without approval, such as: pwd, selected test/build commands, and version checks.
+runCommand asks for approval before all other non-blocked commands; include a clear reason.
 If a command is blocked (contains shell operators or is empty), explain what you were trying to learn and choose a safer command.
 
 After changing files:
@@ -74,19 +73,31 @@ func main() {
 	}
 
 	projectpath.Init(mustGetwd())
+	initialPrompt := strings.Join(os.Args[1:], " ")
+
+	runLogger, err := runlog.CreateRun(runlog.Options{
+		CWD:        projectpath.GetRoot(),
+		UserPrompt: initialPrompt,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[RUN_LOG_ERROR] %v\n", err)
+		os.Exit(1)
+	}
+	defer runLogger.Close()
 
 	tracker := execution.NewTracker(func(ev execution.Event) {
+		if err := runLogger.AppendExecutionEvent(ev); err != nil && cfg.Debug {
+			fmt.Fprintf(os.Stderr, "[runlog] %v\n", err)
+		}
 		if cfg.Debug {
 			fmt.Fprintf(os.Stderr, "[execution] %s %s\n", ev.Record.Status, ev.Record.Kind)
 		}
 	})
 
 	client := llm.NewClient(cfg.APIKey)
-	registry := tools.CreateRegistry(tracker, &approval.NoOpPrompt{})
+	registry := tools.CreateRegistryWithLogger(tracker, &approval.NoOpPrompt{}, runLogger)
 
-	initialPrompt := strings.Join(os.Args[1:], " ")
-
-	m := tui.NewModel(client, cfg.Model, systemPrompt, registry, tracker, initialPrompt)
+	m := tui.NewModelWithLogger(client, cfg.Model, systemPrompt, registry, tracker, initialPrompt, runLogger)
 	p := tea.NewProgram(m)
 	m.SetPrompt(tui.NewTuiPrompt(p))
 

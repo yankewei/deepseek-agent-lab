@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/yankewei/ds-coding-agent/internal/llm"
+	"github.com/yankewei/ds-coding-agent/internal/tools"
 )
 
 // streamStartedMsg carries the event channel when a stream begins.
@@ -27,7 +28,7 @@ type streamDoneMsg struct{}
 
 // toolResultsMsg carries completed tool results.
 type toolResultsMsg struct {
-	results []toolResult
+	results []tools.Result
 }
 
 // turnDoneMsg signals the entire turn is complete.

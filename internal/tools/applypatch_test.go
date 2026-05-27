@@ -52,8 +52,24 @@ func TestApplyPatchTool(t *testing.T) {
 	t.Run("delete file requires approval", func(t *testing.T) {
 		patch := "*** Begin Patch\n*** Delete File: new.go\n*** End Patch"
 		input, _ := json.Marshal(map[string]any{"patch": patch})
-		if !tool.(*applyPatchTool).RequiresApproval(input) {
+		_, required, err := tool.(*applyPatchTool).ApprovalRequest(input)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !required {
 			t.Fatal("delete patch should require approval")
+		}
+	})
+
+	t.Run("delete dry run does not require approval", func(t *testing.T) {
+		patch := "*** Begin Patch\n*** Delete File: new.go\n*** End Patch"
+		input, _ := json.Marshal(map[string]any{"patch": patch, "dryRun": true})
+		_, required, err := tool.(*applyPatchTool).ApprovalRequest(input)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if required {
+			t.Fatal("delete patch dry run should not require approval")
 		}
 	})
 

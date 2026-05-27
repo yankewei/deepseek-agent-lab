@@ -92,17 +92,28 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.IsDark() {
 			style = "dark"
 		}
-		if r, err := glamour.NewTermRenderer(glamour.WithStylePath(style)); err == nil {
+		width := m.contentWidth
+		if width <= 0 {
+			width = boundedContentWidth(m.width)
+		}
+		if r, err := glamour.NewTermRenderer(glamour.WithStylePath(style), glamour.WithWordWrap(width)); err == nil {
 			m.renderer = r
 			m.messageList.SetRenderer(r)
+			m.messageList.refresh()
 		}
 
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c":
-			if m.isRunning && m.cancelStream != nil {
+			if m.isRunning && m.cancelTurn != nil {
+				m.cancelTurn()
+				m.cancelTurn = nil
+				m.cancelStream = nil
+				m.recordRunLog(m.runLogger.AppendRunStatus("interrupted"))
+			} else if m.isRunning && m.cancelStream != nil {
 				m.cancelStream()
 				m.cancelStream = nil
+				m.recordRunLog(m.runLogger.AppendRunStatus("interrupted"))
 			} else {
 				return m, tea.Quit
 			}
@@ -146,6 +157,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.messageList.Add(Message{Type: MsgAssistant, Status: StatusPending})
 		m.thinkingBuf = ""
 		m.pendingToolCalls = nil
+		m.finishReason = ""
+		m.finishUsage = llm.Usage{}
+		m.streamFailed = false
+		m.recordRunLog(m.runLogger.AppendModelStreamStarted())
 		cmd := append(cmds, readNextEventCmd(m.eventStream))
 		return m, tea.Batch(cmd...)
 
@@ -170,6 +185,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			})
 			m.toolCallInputs[e.ID] = e.ArgsJSON
 		case llm.EventFinish:
+			m.finishReason = e.FinishReason
+			m.finishUsage = e.Usage
 			assistant := m.messageList.LastAssistant()
 			if assistant != nil {
 				assistant.Status = StatusDone
@@ -184,15 +201,31 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusLine.SetMode(ModeIdle)
 			m.statusLine.ClearThinking()
 		case llm.EventError:
+			m.streamFailed = true
 			m.messageList.Add(Message{Type: MsgError, Content: e.Err.Error(), Status: StatusError})
 			m.statusLine.SetMode(ModeIdle)
 			m.statusLine.ClearThinking()
+			m.recordRunLog(m.runLogger.AppendRunStatus("failed"))
 		}
 		cmds = append(cmds, readNextEventCmd(m.eventStream))
 
 	case streamDoneMsg:
+		if m.streamFailed {
+			m.isRunning = false
+			m.statusLine.SetMode(ModeIdle)
+			m.cancelStream = nil
+			m.cancelTurn = nil
+			m.turnCtx = nil
+			m.thinkingBuf = ""
+			m.pendingToolCalls = nil
+			m.streamFailed = false
+			break
+		}
 		assistant := m.messageList.LastAssistant()
 		if assistant != nil {
+			m.recordRunLog(m.runLogger.AppendModelReasoning(m.thinkingBuf))
+			m.recordRunLog(m.runLogger.AppendModelText(assistant.Content))
+			m.recordRunLog(m.runLogger.AppendModelStreamFinished(m.finishReason, m.finishUsage))
 			llmMsg := llm.Message{
 				Role:             "assistant",
 				Content:          assistant.Content,
@@ -207,12 +240,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.isRunning = false
 				m.statusLine.SetMode(ModeIdle)
+				m.recordRunLog(m.runLogger.AppendRunStatus("completed"))
 				m.cancelStream = nil
+				m.cancelTurn = nil
+				m.turnCtx = nil
 			}
 		} else {
 			m.isRunning = false
 			m.statusLine.SetMode(ModeIdle)
+			m.recordRunLog(m.runLogger.AppendRunStatus("completed"))
 			m.cancelStream = nil
+			m.cancelTurn = nil
+			m.turnCtx = nil
 		}
 		m.thinkingBuf = ""
 		m.pendingToolCalls = nil
@@ -243,18 +282,33 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			})
 		}
 		m.toolCallInputs = make(map[string]string)
+		if m.turnCtx != nil && m.turnCtx.Err() != nil {
+			m.isRunning = false
+			m.statusLine.SetMode(ModeIdle)
+			m.recordRunLog(m.runLogger.AppendRunStatus("interrupted"))
+			m.cancelStream = nil
+			m.cancelTurn = nil
+			m.turnCtx = nil
+			return m, tea.Batch(cmds...)
+		}
 		cmds = append(cmds, m.startStreamCmd())
 		m.statusLine.SetMode(ModeStreaming)
 
 	case turnDoneMsg:
 		m.isRunning = false
 		m.statusLine.SetMode(ModeIdle)
+		m.recordRunLog(m.runLogger.AppendRunStatus("completed"))
 		m.cancelStream = nil
+		m.cancelTurn = nil
+		m.turnCtx = nil
 
 	case errorMsg:
 		m.isRunning = false
 		m.statusLine.SetMode(ModeIdle)
+		m.recordRunLog(m.runLogger.AppendRunStatus("failed"))
 		m.cancelStream = nil
+		m.cancelTurn = nil
+		m.turnCtx = nil
 		m.messageList.Add(Message{Type: MsgError, Content: msg.err.Error(), Status: StatusError})
 	}
 

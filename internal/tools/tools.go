@@ -3,6 +3,17 @@ package tools
 import (
 	"context"
 	"encoding/json"
+
+	"github.com/yankewei/ds-coding-agent/internal/approval"
+)
+
+// Effect describes whether a tool can mutate local state.
+type Effect string
+
+const (
+	EffectRead    Effect = "read"
+	EffectWrite   Effect = "write"
+	EffectCommand Effect = "command"
 )
 
 // Tool is the interface implemented by every agent tool.
@@ -15,6 +26,25 @@ type Tool interface {
 	Schema() map[string]any
 	// Execute runs the tool with the given raw JSON input.
 	Execute(ctx context.Context, input json.RawMessage) (any, error)
+}
+
+// Effectful can be implemented by tools to declare side effects.
+type Effectful interface {
+	Effect() Effect
+}
+
+// ApprovalAware can be implemented by tools that need approval before running.
+type ApprovalAware interface {
+	ApprovalRequest(input json.RawMessage) (*approval.Request, bool, error)
+}
+
+// EffectOf returns a tool's declared effect. Unknown tools are treated as
+// write-capable so execution stays conservative.
+func EffectOf(t Tool) Effect {
+	if e, ok := t.(Effectful); ok {
+		return e.Effect()
+	}
+	return EffectWrite
 }
 
 // Registry holds all available tools by name.

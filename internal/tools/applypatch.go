@@ -7,12 +7,16 @@ import (
 	"os"
 	"strings"
 
+	"github.com/yankewei/ds-coding-agent/internal/approval"
 	"github.com/yankewei/ds-coding-agent/internal/projectpath"
 )
 
 type applyPatchTool struct{}
 
 func (t *applyPatchTool) Name() string { return "applyPatch" }
+func (t *applyPatchTool) Effect() Effect {
+	return EffectWrite
+}
 func (t *applyPatchTool) Description() string {
 	return "Apply a safe multi-file patch inside the current project"
 }
@@ -100,20 +104,41 @@ func (t *applyPatchTool) Execute(ctx context.Context, input json.RawMessage) (an
 	}, nil
 }
 
-func (t *applyPatchTool) RequiresApproval(input json.RawMessage) bool {
+func (t *applyPatchTool) ApprovalRequest(input json.RawMessage) (*approval.Request, bool, error) {
 	var args struct {
-		Patch string `json:"patch"`
+		Patch  string `json:"patch"`
+		DryRun bool   `json:"dryRun"`
 	}
-	if json.Unmarshal(input, &args) != nil {
-		return false
+	if err := json.Unmarshal(input, &args); err != nil {
+		return nil, false, err
 	}
-	ops, _ := parsePatch(args.Patch)
+	if args.DryRun {
+		return nil, false, nil
+	}
+	ops, err := parsePatch(args.Patch)
+	if err != nil {
+		return nil, false, err
+	}
+	var deleted []string
 	for _, op := range ops {
 		if op.Type == "delete" {
-			return true
+			deleted = append(deleted, op.Path)
 		}
 	}
-	return false
+	if len(deleted) == 0 {
+		return nil, false, nil
+	}
+
+	return &approval.Request{
+		Action:       "apply-patch",
+		Title:        "Delete file with applyPatch",
+		Subject:      strings.Join(deleted, ", "),
+		RiskLevel:    approval.RiskMedium,
+		PolicyReason: "Patch deletes one or more files.",
+		Details: map[string]string{
+			"Deleted files": strings.Join(deleted, ", "),
+		},
+	}, true, nil
 }
 
 // patch types.
