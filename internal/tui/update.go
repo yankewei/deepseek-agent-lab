@@ -126,19 +126,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if text != "" && !m.isRunning {
 				cmds = append(cmds, m.submit(text))
 			}
-		case "pgup":
-			m.messageList.ScrollUp(3)
-		case "pgdown":
-			m.messageList.ScrollDown(3)
+		case "pgup", "pgdown":
+			return m, tea.Batch(cmds...)
 		}
 
 	case tea.MouseWheelMsg:
-		switch msg.Mouse().Button {
-		case tea.MouseWheelUp:
-			m.messageList.ScrollUp(3)
-		case tea.MouseWheelDown:
-			m.messageList.ScrollDown(3)
-		}
+		return m, tea.Batch(cmds...)
 
 	case approvalRequestMsg:
 		m.approvalReq = &msg.req

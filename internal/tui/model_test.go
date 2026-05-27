@@ -135,6 +135,25 @@ func TestMessageListScrollSurvivesUpdateLayout(t *testing.T) {
 	}
 }
 
+func TestMessageListMouseWheelUsesViewportScrollOnly(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 8})
+	m = updated.(*Model)
+
+	for i := 0; i < 20; i++ {
+		m.messageList.Add(Message{Type: MsgAssistant, Content: fmt.Sprintf("line %02d", i), Status: StatusDone})
+	}
+
+	bottom := m.messageList.viewport.YOffset()
+	updated, _ = m.Update(tea.MouseWheelMsg(tea.Mouse{Button: tea.MouseWheelUp}))
+	m = updated.(*Model)
+
+	want := bottom - m.messageList.viewport.MouseWheelDelta
+	if got := m.messageList.viewport.YOffset(); got != want {
+		t.Fatalf("YOffset = %d, want %d", got, want)
+	}
+}
+
 func createTUITestLogger(t *testing.T) *runlog.Logger {
 	t.Helper()
 	logger, err := runlog.CreateRun(runlog.Options{
