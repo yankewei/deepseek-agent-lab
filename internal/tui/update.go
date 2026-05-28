@@ -59,8 +59,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	var cmds []tea.Cmd
 
-	// Route to sub-components.
+	// Editor must process keys before messageList so that suggestion navigation
+	// (pgup/pgdown) is consumed by the input first.
 	{
+		newEditor, cmd := m.editor.Update(msg)
+		m.editor = newEditor
+		cmds = append(cmds, cmd)
+	}
+
+	// Skip messageList viewport scroll when suggestion dropdown is active.
+	skipMessageList := false
+	if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
+		if m.editor.ShowSuggestions && len(m.editor.MatchedSuggestions()) > 0 {
+			switch keyMsg.String() {
+			case "pgup", "pgdown":
+				skipMessageList = true
+			}
+		}
+	}
+	if !skipMessageList {
 		ml, cmd := m.messageList.Update(msg)
 		m.messageList = ml.(*MessageList)
 		cmds = append(cmds, cmd)
@@ -69,12 +86,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	{
 		s, cmd := m.statusLine.Update(msg)
 		m.statusLine = s.(*StatusLine)
-		cmds = append(cmds, cmd)
-	}
-
-	{
-		newEditor, cmd := m.editor.Update(msg)
-		m.editor = newEditor
 		cmds = append(cmds, cmd)
 	}
 
@@ -127,9 +138,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, m.submit(text))
 			}
 		case "pgup":
-			m.messageList.ScrollUp(3)
+			if !m.editor.ShowSuggestions || len(m.editor.MatchedSuggestions()) == 0 {
+				m.messageList.ScrollUp(3)
+			}
 		case "pgdown":
-			m.messageList.ScrollDown(3)
+			if !m.editor.ShowSuggestions || len(m.editor.MatchedSuggestions()) == 0 {
+				m.messageList.ScrollDown(3)
+			}
 		}
 
 	case tea.MouseWheelMsg:
@@ -313,6 +328,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cancelTurn = nil
 		m.turnCtx = nil
 		m.messageList.Add(Message{Type: MsgError, Content: msg.err.Error(), Status: StatusError})
+	}
+
+	// Toggle slash command suggestions based on input prefix.
+	if strings.HasPrefix(m.editor.Value(), "/") {
+		m.editor.ShowSuggestions = true
+		m.editor.SetSuggestions([]string{"/clear", "/help", "/quit"})
+	} else {
+		m.editor.ShowSuggestions = false
 	}
 
 	if m.width > 0 {

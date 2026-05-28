@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
@@ -18,6 +19,7 @@ import (
 	"github.com/yankewei/ds-coding-agent/internal/llm"
 	"github.com/yankewei/ds-coding-agent/internal/runlog"
 	"github.com/yankewei/ds-coding-agent/internal/tools"
+	"github.com/yankewei/ds-coding-agent/internal/tui/slashcmd"
 )
 
 // Model is the Bubble Tea model for the agent TUI.
@@ -82,6 +84,10 @@ func NewModelWithLogger(client *openai.Client, modelName, systemPrompt string, r
 	ti.Focus()
 	ti.SetWidth(80)
 
+	// Bind suggestion navigation to pgup/pgdown.
+	ti.KeyMap.NextSuggestion = key.NewBinding(key.WithKeys("pgdown"))
+	ti.KeyMap.PrevSuggestion = key.NewBinding(key.WithKeys("pgup"))
+
 	// Style the input so text is clearly visible.
 	styles := textinput.DefaultStyles(true)
 	styles.Focused.Prompt = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
@@ -142,6 +148,9 @@ func (m *Model) submit(text string) tea.Cmd {
 	if m.isRunning || text == "" {
 		return nil
 	}
+	if strings.HasPrefix(text, "/") {
+		return m.handleSlashCommand(text)
+	}
 	m.isRunning = true
 	if m.systemPrompt != "" && len(m.messages) == 0 {
 		m.messages = append(m.messages, llm.Message{Role: "system", Content: m.systemPrompt})
@@ -154,6 +163,41 @@ func (m *Model) submit(text string) tea.Cmd {
 	m.editor.Reset()
 	m.turnCtx, m.cancelTurn = context.WithCancel(context.Background())
 	return m.startStreamCmd()
+}
+
+// handleSlashCommand processes a slash command locally without sending to the LLM.
+func (m *Model) handleSlashCommand(text string) tea.Cmd {
+	switch text {
+	case "/clear":
+		m.messages = nil
+		m.messageList = NewMessageList()
+		m.messageList.SetRenderer(m.renderer)
+		if m.width > 0 {
+			m.updateLayout()
+		}
+		m.toolCallInputs = make(map[string]string)
+		m.thinkingBuf = ""
+		m.pendingToolCalls = nil
+		m.statusLine.SetMode(ModeIdle)
+		m.messageList.Add(Message{Type: MsgSystem, Content: "对话已清除", Status: StatusDone})
+		m.editor.Reset()
+		return nil
+	case "/help":
+		var lines []string
+		lines = append(lines, "可用命令：")
+		for _, cmd := range slashcmd.All() {
+			lines = append(lines, fmt.Sprintf("  %s — %s", cmd.Name, cmd.Description))
+		}
+		m.messageList.Add(Message{Type: MsgSystem, Content: strings.Join(lines, "\n"), Status: StatusDone})
+		m.editor.Reset()
+		return nil
+	case "/quit":
+		return tea.Quit
+	default:
+		m.messageList.Add(Message{Type: MsgError, Content: "未知命令: " + text, Status: StatusError})
+		m.editor.Reset()
+		return nil
+	}
 }
 
 // startStreamCmd initiates the LLM stream with a cancellable context.
