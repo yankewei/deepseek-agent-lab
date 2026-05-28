@@ -343,7 +343,6 @@ func (m *Model) messagesForRequest() []llm.Message {
 		if msg.Role == "system" {
 			continue
 		}
-		msg.ReasoningContent = ""
 		out = append(out, msg)
 	}
 	return out

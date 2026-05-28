@@ -40,6 +40,7 @@ Tool return formats vary by tool:
   - applyPatch returns { changedFiles: [...], dryRun: true|false }
   - gitStatus returns the git status output as a string
   - getDiff returns the git diff output as a string
+  - listSkills returns loaded skill metadata
   - runCommand returns { stdout, stderr, exitCode, approved, approvalRequired }
 If a tool fails, the error will be described in the response.
 
@@ -49,6 +50,7 @@ Do not request approval for destructive commands unless the user explicitly aske
 
 When you need to inspect the project, prefer reading files and running safe commands.
 Use listFiles, readFile, and searchFiles for file inspection.
+Use listSkills to inspect loaded skills; do not use listFiles for skill directories outside the project root.
 Use editFile for small, exact replacements in project files, then run validation when appropriate.
 Use applyPatch for multi-file changes, then run validation when appropriate.
 Use gitStatus after edits to inspect the working tree state.
@@ -122,7 +124,7 @@ func main() {
 		}
 	})
 
-	registry := tools.CreateRegistryWithLogger(tracker, &approval.NoOpPrompt{}, runLogger)
+	registry := tools.CreateRegistryWithLoggerAndSkills(tracker, &approval.NoOpPrompt{}, runLogger, loadedSkills)
 
 	m := tui.NewModelWithLogger(client, cfg.Model, cfg.SystemPrompt, registry, tracker, initialPrompt, runLogger)
 	m.SetSkills(loadedSkills)
@@ -192,7 +194,7 @@ func runResume(cfg *config.Config, runID string) {
 		}
 	})
 
-	registry := tools.CreateRegistryWithLogger(tracker, &approval.NoOpPrompt{}, runLogger)
+	registry := tools.CreateRegistryWithLoggerAndSkills(tracker, &approval.NoOpPrompt{}, runLogger, loadedSkills)
 	m := tui.NewModelWithLogger(client, cfg.Model, cfg.SystemPrompt, registry, tracker, "", runLogger)
 	m.SetSkills(loadedSkills)
 	p := tea.NewProgram(m)

@@ -5,6 +5,7 @@ import (
 	"github.com/yankewei/ds-coding-agent/internal/execution"
 	"github.com/yankewei/ds-coding-agent/internal/policy"
 	"github.com/yankewei/ds-coding-agent/internal/runlog"
+	"github.com/yankewei/ds-coding-agent/internal/skills"
 )
 
 // CreateRegistry builds the full tool registry.
@@ -14,6 +15,11 @@ func CreateRegistry(tracker *execution.Tracker, prompt approval.Prompt) *Registr
 
 // CreateRegistryWithLogger builds the full tool registry with optional run logging.
 func CreateRegistryWithLogger(tracker *execution.Tracker, prompt approval.Prompt, logger *runlog.Logger) *Registry {
+	return CreateRegistryWithLoggerAndSkills(tracker, prompt, logger, nil)
+}
+
+// CreateRegistryWithLoggerAndSkills builds the full tool registry with optional run logging and skill metadata tools.
+func CreateRegistryWithLoggerAndSkills(tracker *execution.Tracker, prompt approval.Prompt, logger *runlog.Logger, allSkills []skills.Skill) *Registry {
 	r := NewRegistry()
 	runtimePolicy := policy.NewRuntimePolicy()
 
@@ -24,6 +30,7 @@ func CreateRegistryWithLogger(tracker *execution.Tracker, prompt approval.Prompt
 	r.Register(NewApplyPatchTool())
 	r.Register(NewGitStatusTool())
 	r.Register(NewGetDiffTool())
+	r.Register(NewListSkillsTool(allSkills))
 	r.Register(NewRunCommandToolWithLogger(tracker, prompt, runtimePolicy, logger))
 
 	return r

@@ -137,7 +137,7 @@ func TestMessageListScrollSurvivesUpdateLayout(t *testing.T) {
 	}
 }
 
-func TestMessagesForRequestInjectsSystemAndStripsReasoning(t *testing.T) {
+func TestMessagesForRequestInjectsSystemAndPreservesReasoning(t *testing.T) {
 	m := NewModel(nil, "", "system prompt", tools.NewRegistry(), execution.NewTracker(nil), "")
 	m.messages = []llm.Message{
 		{Role: "assistant", Content: "ok", ReasoningContent: "hidden"},
@@ -150,8 +150,8 @@ func TestMessagesForRequestInjectsSystemAndStripsReasoning(t *testing.T) {
 	if got[0].Role != "system" || got[0].Content != "system prompt" {
 		t.Fatalf("first message = %+v, want system prompt", got[0])
 	}
-	if got[1].ReasoningContent != "" {
-		t.Fatalf("ReasoningContent = %q, want empty", got[1].ReasoningContent)
+	if got[1].ReasoningContent != "hidden" {
+		t.Fatalf("ReasoningContent = %q, want hidden", got[1].ReasoningContent)
 	}
 	if m.messages[0].ReasoningContent != "hidden" {
 		t.Fatalf("messagesForRequest mutated model messages")
