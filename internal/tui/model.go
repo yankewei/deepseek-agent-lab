@@ -6,7 +6,6 @@ import (
 	"os"
 	"strings"
 
-	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
@@ -31,6 +30,9 @@ type Model struct {
 	editor      textinput.Model
 	statusLine  *StatusLine
 	keys        KeyMap
+	slashIndex  int
+	slashHidden bool
+	slashValue  string
 
 	// Agent config
 	client       *openai.Client
@@ -83,10 +85,6 @@ func NewModelWithLogger(client *openai.Client, modelName, systemPrompt string, r
 	ti.Placeholder = ""
 	ti.Focus()
 	ti.SetWidth(80)
-
-	// Bind suggestion navigation to pgup/pgdown.
-	ti.KeyMap.NextSuggestion = key.NewBinding(key.WithKeys("pgdown"))
-	ti.KeyMap.PrevSuggestion = key.NewBinding(key.WithKeys("pgup"))
 
 	// Style the input so text is clearly visible.
 	styles := textinput.DefaultStyles(true)
@@ -202,6 +200,116 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 	}
 }
 
+func (m *Model) matchedSlashCommands() []slashcmd.Command {
+	value := m.editor.Value()
+	if !strings.HasPrefix(value, "/") {
+		return nil
+	}
+	value = strings.ToLower(value)
+	var matches []slashcmd.Command
+	for _, cmd := range slashcmd.All() {
+		if strings.HasPrefix(strings.ToLower(cmd.Name), value) {
+			matches = append(matches, cmd)
+		}
+	}
+	return matches
+}
+
+func (m *Model) slashMenuActive() bool {
+	return strings.HasPrefix(m.editor.Value(), "/") && !m.slashHidden && len(m.matchedSlashCommands()) > 0
+}
+
+func (m *Model) syncSlashMenu() {
+	m.editor.ShowSuggestions = false
+	value := m.editor.Value()
+	if !strings.HasPrefix(value, "/") {
+		m.slashIndex = 0
+		m.slashHidden = false
+		m.slashValue = ""
+		return
+	}
+	if value != m.slashValue {
+		m.slashHidden = false
+		m.slashValue = value
+	}
+	m.clampSlashIndex()
+}
+
+func (m *Model) clampSlashIndex() {
+	matches := m.matchedSlashCommands()
+	if len(matches) == 0 {
+		m.slashIndex = 0
+		return
+	}
+	if m.slashIndex < 0 {
+		m.slashIndex = len(matches) - 1
+	}
+	if m.slashIndex >= len(matches) {
+		m.slashIndex = 0
+	}
+}
+
+func (m *Model) moveSlashSelection(delta int) {
+	matches := m.matchedSlashCommands()
+	if len(matches) == 0 {
+		m.slashIndex = 0
+		return
+	}
+	m.slashIndex = (m.slashIndex + delta) % len(matches)
+	if m.slashIndex < 0 {
+		m.slashIndex += len(matches)
+	}
+}
+
+func (m *Model) selectSlashCommand() {
+	matches := m.matchedSlashCommands()
+	if len(matches) == 0 {
+		return
+	}
+	m.clampSlashIndex()
+	selected := matches[m.slashIndex].Name
+	m.editor.SetValue(selected)
+	m.editor.CursorEnd()
+	m.slashHidden = true
+	m.slashValue = selected
+}
+
+func (m *Model) closeSlashMenu() {
+	if !strings.HasPrefix(m.editor.Value(), "/") {
+		return
+	}
+	m.slashHidden = true
+	m.slashValue = m.editor.Value()
+}
+
+func slashCommandLabel(cmd slashcmd.Command) string {
+	return strings.TrimPrefix(cmd.Name, "/")
+}
+
+func (m *Model) renderSlashCommandMenu() string {
+	if !m.slashMenuActive() {
+		return ""
+	}
+	matches := m.matchedSlashCommands()
+	lines := make([]string, 0, len(matches))
+	itemStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	selectedStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("0")).
+		Background(lipgloss.Color("6")).
+		Bold(true)
+	for i, cmd := range matches {
+		label := slashCommandLabel(cmd)
+		line := fmt.Sprintf("  %s  %s", label, cmd.Description)
+		if i == m.slashIndex {
+			line = selectedStyle.Render("> " + label + "  " + cmd.Description)
+		} else {
+			line = itemStyle.Render(line)
+		}
+		lines = append(lines, line)
+	}
+	return lipgloss.NewStyle().PaddingLeft(2).Render(strings.Join(lines, "\n"))
+}
+
 // startStreamCmd initiates the LLM stream with a cancellable context.
 func (m *Model) startStreamCmd() tea.Cmd {
 	ctx := m.turnCtx
@@ -259,13 +367,14 @@ func (m *Model) updateLayout() {
 
 	helpBarHeight := 1
 	editorHeight := lipgloss.Height(m.editor.View())
+	menuHeight := lipgloss.Height(m.renderSlashCommandMenu())
 
 	statusHeight := 0
 	if !m.statusLine.IsIdle() {
 		statusHeight = 1
 	}
 
-	messageListHeight := m.height - helpBarHeight - editorHeight - statusHeight
+	messageListHeight := m.height - helpBarHeight - editorHeight - menuHeight - statusHeight
 	if messageListHeight < 5 {
 		messageListHeight = 5
 	}

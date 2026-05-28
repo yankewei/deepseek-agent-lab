@@ -59,20 +59,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	var cmds []tea.Cmd
 
-	// Editor must process keys before messageList so that suggestion navigation
-	// (pgup/pgdown) is consumed by the input first.
+	// Editor must process keys first so slash menu state reflects the latest
+	// typed prefix before viewport navigation sees the same key.
 	{
 		newEditor, cmd := m.editor.Update(msg)
 		m.editor = newEditor
 		cmds = append(cmds, cmd)
 	}
+	m.syncSlashMenu()
 
-	// Skip messageList viewport scroll when suggestion dropdown is active.
+	// Skip messageList viewport scroll when the slash command menu consumes arrows.
 	skipMessageList := false
 	if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
-		if m.editor.ShowSuggestions && len(m.editor.MatchedSuggestions()) > 0 {
+		if m.slashMenuActive() {
 			switch keyMsg.String() {
-			case "pgup", "pgdown":
+			case "up", "down":
 				skipMessageList = true
 			}
 		}
@@ -137,14 +138,24 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if text != "" && !m.isRunning {
 				cmds = append(cmds, m.submit(text))
 			}
+		case "up":
+			if m.slashMenuActive() {
+				m.moveSlashSelection(-1)
+			}
+		case "down":
+			if m.slashMenuActive() {
+				m.moveSlashSelection(1)
+			}
+		case "enter", "tab":
+			if m.slashMenuActive() {
+				m.selectSlashCommand()
+			}
+		case "esc":
+			m.closeSlashMenu()
 		case "pgup":
-			if !m.editor.ShowSuggestions || len(m.editor.MatchedSuggestions()) == 0 {
-				m.messageList.ScrollUp(3)
-			}
+			m.messageList.ScrollUp(3)
 		case "pgdown":
-			if !m.editor.ShowSuggestions || len(m.editor.MatchedSuggestions()) == 0 {
-				m.messageList.ScrollDown(3)
-			}
+			m.messageList.ScrollDown(3)
 		}
 
 	case tea.MouseWheelMsg:
@@ -330,13 +341,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.messageList.Add(Message{Type: MsgError, Content: msg.err.Error(), Status: StatusError})
 	}
 
-	// Toggle slash command suggestions based on input prefix.
-	if strings.HasPrefix(m.editor.Value(), "/") {
-		m.editor.ShowSuggestions = true
-		m.editor.SetSuggestions([]string{"/clear", "/help", "/quit"})
-	} else {
-		m.editor.ShowSuggestions = false
-	}
+	m.syncSlashMenu()
 
 	if m.width > 0 {
 		m.updateLayout()

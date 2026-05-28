@@ -19,6 +19,9 @@ func (m *Model) View() tea.View {
 	}
 
 	sections = append(sections, m.editor.View())
+	if menu := m.renderSlashCommandMenu(); menu != "" {
+		sections = append(sections, menu)
+	}
 	sections = append(sections, m.renderHelpBar())
 
 	base := lipgloss.JoinVertical(lipgloss.Left, sections...)
