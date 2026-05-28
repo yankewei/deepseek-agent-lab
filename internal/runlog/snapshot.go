@@ -82,6 +82,14 @@ func BuildSnapshot(events []map[string]any) (*Snapshot, error) {
 			text, _ := ev["text"].(string)
 			messages = append(messages, llm.Message{Role: "user", Content: text})
 
+		case "conversation_cleared":
+			messages = nil
+			assistantText.Reset()
+			assistantReasoning.Reset()
+			toolCalls = nil
+			inStream = false
+			streamFinished = false
+
 		case "model_stream_started":
 			flushAssistant()
 			inStream = true

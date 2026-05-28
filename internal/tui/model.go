@@ -131,6 +131,7 @@ func (m *Model) Init() tea.Cmd {
 	}
 	if m.resumeSnapshot != nil && m.resumeSnapshot.NextAction == runlog.ActionReadyForNextStep {
 		m.isRunning = true
+		m.turnCtx, m.cancelTurn = context.WithCancel(context.Background())
 		m.statusLine.SetMode(ModeStreaming)
 		cmds = append(cmds, func() tea.Msg {
 			return resumeContinueMsg{}
@@ -179,6 +180,7 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		m.thinkingBuf = ""
 		m.pendingToolCalls = nil
 		m.statusLine.SetMode(ModeIdle)
+		m.recordRunLog(m.runLogger.AppendConversationCleared())
 		m.messageList.Add(Message{Type: MsgSystem, Content: "对话已清除", Status: StatusDone})
 		m.editor.Reset()
 		return nil
@@ -206,13 +208,27 @@ func (m *Model) startStreamCmd() tea.Cmd {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	messages := m.messagesForRequest()
+	toolDefs := append([]llm.ToolDefinition(nil), m.toolDefs...)
 	return func() tea.Msg {
-		events, err := llm.Stream(ctx, m.client, m.modelName, m.messages, m.toolDefs)
+		events, err := llm.Stream(ctx, m.client, m.modelName, messages, toolDefs)
 		if err != nil {
 			return errorMsg{err: err}
 		}
 		return streamStartedMsg{events: events, cancel: m.cancelTurn}
 	}
+}
+
+func (m *Model) messagesForRequest() []llm.Message {
+	out := make([]llm.Message, 0, len(m.messages)+1)
+	if m.systemPrompt != "" && (len(m.messages) == 0 || m.messages[0].Role != "system") {
+		out = append(out, llm.Message{Role: "system", Content: m.systemPrompt})
+	}
+	for _, msg := range m.messages {
+		msg.ReasoningContent = ""
+		out = append(out, msg)
+	}
+	return out
 }
 
 // executeToolsCmd runs the given tool calls in parallel.

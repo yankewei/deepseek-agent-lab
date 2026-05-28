@@ -64,6 +64,11 @@ type UserMessageEvent struct {
 	Text      string `json:"text"`
 }
 
+type ConversationClearedEvent struct {
+	Type      string `json:"type"`
+	Timestamp string `json:"timestamp"`
+}
+
 type ModelStreamStartedEvent struct {
 	Type      string `json:"type"`
 	Timestamp string `json:"timestamp"`
@@ -321,6 +326,13 @@ func (l *Logger) AppendUserMessage(text string) error {
 		return nil
 	}
 	return l.Append(UserMessageEvent{Type: "user_message", Timestamp: l.timestamp(), Text: text})
+}
+
+func (l *Logger) AppendConversationCleared() error {
+	if l == nil {
+		return nil
+	}
+	return l.Append(ConversationClearedEvent{Type: "conversation_cleared", Timestamp: l.timestamp()})
 }
 
 func (l *Logger) AppendModelStreamStarted() error {

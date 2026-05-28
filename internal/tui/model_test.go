@@ -135,6 +135,77 @@ func TestMessageListScrollSurvivesUpdateLayout(t *testing.T) {
 	}
 }
 
+func TestMessagesForRequestInjectsSystemAndStripsReasoning(t *testing.T) {
+	m := NewModel(nil, "", "system prompt", tools.NewRegistry(), execution.NewTracker(nil), "")
+	m.messages = []llm.Message{
+		{Role: "assistant", Content: "ok", ReasoningContent: "hidden"},
+	}
+
+	got := m.messagesForRequest()
+	if len(got) != 2 {
+		t.Fatalf("len(messages) = %d, want 2", len(got))
+	}
+	if got[0].Role != "system" || got[0].Content != "system prompt" {
+		t.Fatalf("first message = %+v, want system prompt", got[0])
+	}
+	if got[1].ReasoningContent != "" {
+		t.Fatalf("ReasoningContent = %q, want empty", got[1].ReasoningContent)
+	}
+	if m.messages[0].ReasoningContent != "hidden" {
+		t.Fatalf("messagesForRequest mutated model messages")
+	}
+}
+
+func TestMessagesForRequestDoesNotDuplicateSystem(t *testing.T) {
+	m := NewModel(nil, "", "system prompt", tools.NewRegistry(), execution.NewTracker(nil), "")
+	m.messages = []llm.Message{
+		{Role: "system", Content: "system prompt"},
+		{Role: "user", Content: "hello"},
+	}
+
+	got := m.messagesForRequest()
+	if len(got) != 2 {
+		t.Fatalf("len(messages) = %d, want 2", len(got))
+	}
+	if got[0].Role != "system" || got[1].Role != "user" {
+		t.Fatalf("messages = %+v", got)
+	}
+}
+
+func TestResumeInitCreatesCancelableTurnContext(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	m.ResumeFrom(&runlog.Snapshot{NextAction: runlog.ActionReadyForNextStep})
+	_ = m.Init()
+
+	if !m.isRunning {
+		t.Fatal("model should be running after auto-resume init")
+	}
+	if m.turnCtx == nil {
+		t.Fatal("turnCtx should be created for resumed continuation")
+	}
+	if m.cancelTurn == nil {
+		t.Fatal("cancelTurn should be created for resumed continuation")
+	}
+}
+
+func TestSlashClearPersistsRunLogEvent(t *testing.T) {
+	logger := createTUITestLogger(t)
+	m := NewModelWithLogger(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "", logger)
+	m.messages = []llm.Message{{Role: "user", Content: "before"}}
+
+	_ = m.handleSlashCommand("/clear")
+
+	if len(m.messages) != 0 {
+		t.Fatalf("len(messages) = %d, want 0", len(m.messages))
+	}
+	events := readTUILogEvents(t, logger.Path())
+	got := eventTypes(events)
+	want := []string{"session_meta", "conversation_cleared"}
+	if !sameStrings(got, want) {
+		t.Fatalf("types = %v, want %v", got, want)
+	}
+}
+
 func createTUITestLogger(t *testing.T) *runlog.Logger {
 	t.Helper()
 	logger, err := runlog.CreateRun(runlog.Options{

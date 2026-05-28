@@ -140,6 +140,20 @@ func TestOpenExistingInvalidPath(t *testing.T) {
 	}
 }
 
+func TestAppendConversationCleared(t *testing.T) {
+	logger := createTestLogger(t)
+	if err := logger.AppendConversationCleared(); err != nil {
+		t.Fatal(err)
+	}
+
+	events := readLogEvents(t, logger.Path())
+	got := eventTypes(events)
+	want := []string{"session_meta", "conversation_cleared"}
+	if !sameStrings(got, want) {
+		t.Fatalf("types = %v, want %v", got, want)
+	}
+}
+
 func TestConcurrentAppendKeepsJSONLinesIntact(t *testing.T) {
 	logger := createTestLogger(t)
 	defer logger.Close()

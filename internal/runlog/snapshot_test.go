@@ -129,6 +129,27 @@ func TestBuildSnapshotMultipleTurns(t *testing.T) {
 	}
 }
 
+func TestBuildSnapshotConversationCleared(t *testing.T) {
+	events := []map[string]any{
+		{"type": "user_message", "text": "before"},
+		{"type": "model_stream_started"},
+		{"type": "model_text", "text": "old"},
+		{"type": "model_stream_finished", "finishReason": "stop"},
+		{"type": "conversation_cleared"},
+		{"type": "user_message", "text": "after"},
+	}
+	s, err := BuildSnapshot(events)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Messages) != 1 {
+		t.Fatalf("len(Messages) = %d, want 1", len(s.Messages))
+	}
+	if s.Messages[0].Content != "after" {
+		t.Fatalf("message content = %q, want after", s.Messages[0].Content)
+	}
+}
+
 func TestBuildSnapshotRunStatusChanged(t *testing.T) {
 	events := []map[string]any{
 		{"type": "session_meta", "runId": "run_1", "cwd": "/tmp/project", "userPrompt": "hello", "status": "running"},
