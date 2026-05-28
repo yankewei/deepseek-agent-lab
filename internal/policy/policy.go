@@ -17,7 +17,7 @@ const (
 type CommandPolicyCode string
 
 const (
-	CodeLowRiskCommandAllowed CommandPolicyCode = "LOW_RISK_COMMAND_ALLOWED"
+	CodeLowRiskCommandAllowed   CommandPolicyCode = "LOW_RISK_COMMAND_ALLOWED"
 	CodeCommandRequiresApproval CommandPolicyCode = "COMMAND_REQUIRES_APPROVAL"
 	CodeCommandEmpty            CommandPolicyCode = "COMMAND_EMPTY"
 	CodeShellOperatorBlocked    CommandPolicyCode = "SHELL_OPERATOR_BLOCKED"
@@ -46,8 +46,8 @@ var (
 		"npm run build": {},
 		"npm --version": {},
 		// yarn
-		"yarn test":     {},
-		"yarn build":    {},
+		"yarn test":      {},
+		"yarn build":     {},
 		"yarn --version": {},
 		// pnpm
 		"pnpm test":      {},
@@ -59,8 +59,8 @@ var (
 		"go version":  {},
 		"go mod tidy": {},
 		// cargo
-		"cargo test":     {},
-		"cargo build":    {},
+		"cargo test":      {},
+		"cargo build":     {},
 		"cargo --version": {},
 		// make
 		"make":       {},

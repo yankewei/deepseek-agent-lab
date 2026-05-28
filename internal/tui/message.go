@@ -30,10 +30,10 @@ const (
 
 // Message is a single item in the conversation display.
 type Message struct {
-	ID       MessageID
-	Type     MessageType
-	Content  string
-	Metadata map[string]any
-	Status   MessageStatus
+	ID        MessageID
+	Type      MessageType
+	Content   string
+	Metadata  map[string]any
+	Status    MessageStatus
 	CreatedAt time.Time
 }
