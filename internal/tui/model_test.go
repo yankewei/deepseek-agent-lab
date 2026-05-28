@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -206,6 +207,127 @@ func TestSlashClearPersistsRunLogEvent(t *testing.T) {
 	}
 }
 
+func TestSlashCommandMenuMatchesAndRendersCommands(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	m.editor.SetValue("/")
+	m.syncSlashMenu()
+
+	matches := m.matchedSlashCommands()
+	if len(matches) != 3 {
+		t.Fatalf("len(matches) = %d, want 3", len(matches))
+	}
+	menu := m.renderSlashCommandMenu()
+	for _, want := range []string{"clear", "help", "quit"} {
+		if !strings.Contains(menu, want) {
+			t.Fatalf("menu = %q, want it to contain %q", menu, want)
+		}
+	}
+	for _, unwanted := range []string{"/clear", "/help", "/quit"} {
+		if strings.Contains(menu, unwanted) {
+			t.Fatalf("menu = %q, should not contain slash-prefixed candidate %q", menu, unwanted)
+		}
+	}
+	if !m.slashMenuActive() {
+		t.Fatal("slash menu should be active for /")
+	}
+	if m.editor.ShowSuggestions {
+		t.Fatal("textinput suggestions should stay disabled")
+	}
+}
+
+func TestSlashCommandMenuFiltersByPrefix(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	m.editor.SetValue("/h")
+	m.syncSlashMenu()
+
+	matches := m.matchedSlashCommands()
+	if len(matches) != 1 || matches[0].Name != "/help" {
+		t.Fatalf("matches = %+v, want only /help", matches)
+	}
+	if strings.Contains(m.renderSlashCommandMenu(), "/clear") {
+		t.Fatalf("menu = %q, should not contain /clear", m.renderSlashCommandMenu())
+	}
+}
+
+func TestSlashCommandMenuNavigatesAndSelects(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+
+	updated, _ := m.Update(keyPress("/"))
+	m = updated.(*Model)
+	if got := m.editor.Value(); got != "/" {
+		t.Fatalf("editor value = %q, want /", got)
+	}
+	if m.slashIndex != 0 {
+		t.Fatalf("slashIndex = %d, want 0", m.slashIndex)
+	}
+
+	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+	m = updated.(*Model)
+	if m.slashIndex != 1 {
+		t.Fatalf("slashIndex = %d, want 1", m.slashIndex)
+	}
+
+	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyUp}))
+	m = updated.(*Model)
+	if m.slashIndex != 0 {
+		t.Fatalf("slashIndex = %d, want 0", m.slashIndex)
+	}
+
+	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyUp}))
+	m = updated.(*Model)
+	if m.slashIndex != 2 {
+		t.Fatalf("slashIndex = %d, want 2", m.slashIndex)
+	}
+
+	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	m = updated.(*Model)
+	if got := m.editor.Value(); got != "/quit" {
+		t.Fatalf("editor value = %q, want /quit", got)
+	}
+	if m.slashMenuActive() {
+		t.Fatal("slash menu should hide after selecting a command")
+	}
+}
+
+func TestSlashCommandMenuTabSelectsFilteredCommand(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	m.editor.SetValue("/h")
+	m.syncSlashMenu()
+
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	m = updated.(*Model)
+	if got := m.editor.Value(); got != "/help" {
+		t.Fatalf("editor value = %q, want /help", got)
+	}
+	if m.slashMenuActive() {
+		t.Fatal("slash menu should hide after tab selection")
+	}
+}
+
+func TestSlashCommandMenuEscapeAndPlainInput(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	m.editor.SetValue("/")
+	m.syncSlashMenu()
+
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEsc}))
+	m = updated.(*Model)
+	if got := m.editor.Value(); got != "/" {
+		t.Fatalf("editor value = %q, want /", got)
+	}
+	if m.slashMenuActive() {
+		t.Fatal("slash menu should be closed after escape")
+	}
+
+	m.editor.SetValue("hello")
+	m.syncSlashMenu()
+	if m.slashMenuActive() {
+		t.Fatal("slash menu should not be active for plain input")
+	}
+	if menu := m.renderSlashCommandMenu(); menu != "" {
+		t.Fatalf("menu = %q, want empty", menu)
+	}
+}
+
 func createTUITestLogger(t *testing.T) *runlog.Logger {
 	t.Helper()
 	logger, err := runlog.CreateRun(runlog.Options{
@@ -222,6 +344,14 @@ func createTUITestLogger(t *testing.T) *runlog.Logger {
 	}
 	t.Cleanup(func() { _ = logger.Close() })
 	return logger
+}
+
+func keyPress(text string) tea.KeyPressMsg {
+	runes := []rune(text)
+	if len(runes) == 0 {
+		return tea.KeyPressMsg{}
+	}
+	return tea.KeyPressMsg(tea.Key{Text: text, Code: runes[0]})
 }
 
 func closedEventStream() <-chan llm.Event {
