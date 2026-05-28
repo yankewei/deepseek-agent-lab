@@ -106,6 +106,40 @@ func TestCreateRunDoesNotOverwriteExistingLog(t *testing.T) {
 	}
 }
 
+func TestOpenExistingAppendsToLog(t *testing.T) {
+	logger := createTestLogger(t)
+	_ = logger.AppendUserMessage("first")
+	_ = logger.Close()
+
+	logger2, err := OpenExisting(logger.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer logger2.Close()
+
+	if logger2.RunID() != logger.RunID() {
+		t.Fatalf("RunID = %q, want %q", logger2.RunID(), logger.RunID())
+	}
+
+	if err := logger2.AppendUserMessage("second"); err != nil {
+		t.Fatal(err)
+	}
+
+	events := readLogEvents(t, logger.Path())
+	got := eventTypes(events)
+	want := []string{"session_meta", "user_message", "user_message"}
+	if !sameStrings(got, want) {
+		t.Fatalf("types = %v, want %v", got, want)
+	}
+}
+
+func TestOpenExistingInvalidPath(t *testing.T) {
+	_, err := OpenExisting("/dev/null/invalid")
+	if err == nil {
+		t.Fatal("expected error for invalid path")
+	}
+}
+
 func TestConcurrentAppendKeepsJSONLinesIntact(t *testing.T) {
 	logger := createTestLogger(t)
 	defer logger.Close()

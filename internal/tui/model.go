@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 
@@ -58,6 +59,9 @@ type Model struct {
 
 	// Optional initial prompt to auto-start on init.
 	initialPrompt string
+
+	// Resume state.
+	resumeSnapshot *runlog.Snapshot
 
 	// Pending approval state.
 	approvalReq   *approval.Request
@@ -119,7 +123,13 @@ func (m *Model) Init() tea.Cmd {
 		tea.RequestBackgroundColor,
 		m.statusLine.Init(),
 	}
-	if m.initialPrompt != "" {
+	if m.resumeSnapshot != nil && m.resumeSnapshot.NextAction == runlog.ActionReadyForNextStep {
+		m.isRunning = true
+		m.statusLine.SetMode(ModeStreaming)
+		cmds = append(cmds, func() tea.Msg {
+			return resumeContinueMsg{}
+		})
+	} else if m.initialPrompt != "" {
 		cmds = append(cmds, func() tea.Msg {
 			return userSubmittedMsg{text: m.initialPrompt}
 		})
@@ -257,6 +267,72 @@ func newMarkdownRenderer(width int) *glamour.TermRenderer {
 		return nil
 	}
 	return r
+}
+
+// ResumeFrom restores conversation state from a snapshot.
+func (m *Model) ResumeFrom(snapshot *runlog.Snapshot) {
+	m.resumeSnapshot = snapshot
+	m.messages = append([]llm.Message(nil), snapshot.Messages...)
+
+	for _, msg := range m.messages {
+		switch msg.Role {
+		case "user":
+			m.messageList.Add(Message{Type: MsgUser, Content: msg.Content, Status: StatusDone})
+		case "assistant":
+			m.messageList.Add(Message{
+				Type:    MsgAssistant,
+				Content: msg.Content,
+				Status:  StatusDone,
+				Metadata: map[string]any{
+					"reasoning": msg.ReasoningContent,
+				},
+			})
+			for _, tc := range msg.ToolCalls {
+				m.toolCallInputs[tc.ID] = string(tc.Input)
+				m.messageList.Add(Message{
+					Type:   MsgToolCall,
+					Status: StatusDone,
+					Metadata: map[string]any{
+						"tool_id":    tc.ID,
+						"tool_name":  tc.Name,
+						"tool_input": string(tc.Input),
+					},
+				})
+			}
+		case "tool":
+			toolName := ""
+			for i := len(m.messages) - 1; i >= 0; i-- {
+				if m.messages[i].Role == "assistant" {
+					for _, tc := range m.messages[i].ToolCalls {
+						if tc.ID == msg.ToolCallID {
+							toolName = tc.Name
+							break
+						}
+					}
+					break
+				}
+			}
+			meta := map[string]any{
+				"tool_name":  toolName,
+				"tool_input": m.toolCallInputs[msg.ToolCallID],
+				"success":    !strings.HasPrefix(msg.Content, `{"error"`),
+			}
+			m.messageList.Add(Message{
+				Type:     MsgToolResult,
+				Content:  msg.Content,
+				Metadata: meta,
+				Status:   StatusDone,
+			})
+		}
+	}
+
+	if snapshot.NextAction != runlog.ActionReadyForNextStep {
+		m.messageList.Add(Message{
+			Type:    MsgSystem,
+			Content: fmt.Sprintf("▶ Resumed run %s (%s)", snapshot.RunID, snapshot.NextAction),
+			Status:  StatusDone,
+		})
+	}
 }
 
 func boundedContentWidth(terminalWidth int) int {

@@ -11,10 +11,11 @@ import (
 
 // Config holds all application configuration.
 type Config struct {
-	APIKey       string
-	Model        string
-	Debug        bool
-	SystemPrompt string
+	APIKey        string
+	Model         string
+	Debug         bool
+	SystemPrompt  string
+	RemainingArgs []string
 }
 
 // Default values.
@@ -57,6 +58,7 @@ func loadWithFlagSet(fs *flag.FlagSet, args []string) (*Config, error) {
 	if *debug {
 		cfg.Debug = true
 	}
+	cfg.RemainingArgs = fs.Args()
 
 	if cfg.APIKey == "" {
 		return nil, fmt.Errorf("DEEPSEEK_API_KEY is required (set env var or use -key flag)")

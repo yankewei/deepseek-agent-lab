@@ -34,6 +34,9 @@ type toolResultsMsg struct {
 // turnDoneMsg signals the entire turn is complete.
 type turnDoneMsg struct{}
 
+// resumeContinueMsg triggers automatic continuation of a resumed run.
+type resumeContinueMsg struct{}
+
 // errorMsg carries an error from the agent goroutine.
 type errorMsg struct {
 	err error

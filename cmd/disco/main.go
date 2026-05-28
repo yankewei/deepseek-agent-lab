@@ -73,8 +73,27 @@ func main() {
 	}
 
 	projectpath.Init(mustGetwd())
-	initialPrompt := strings.Join(os.Args[1:], " ")
 
+	// Subcommands: runs, resume <runId>
+	if len(cfg.RemainingArgs) > 0 {
+		switch cfg.RemainingArgs[0] {
+		case "runs":
+			listRuns()
+			return
+		case "resume":
+			if len(cfg.RemainingArgs) < 2 {
+				fmt.Fprintln(os.Stderr, "Usage: disco resume <runId>")
+				os.Exit(1)
+			}
+			runResume(cfg, cfg.RemainingArgs[1])
+			return
+		}
+	}
+
+	// Normal prompt flow.
+	initialPrompt := strings.Join(cfg.RemainingArgs, " ")
+
+	client := llm.NewClient(cfg.APIKey)
 	runLogger, err := runlog.CreateRun(runlog.Options{
 		CWD:        projectpath.GetRoot(),
 		UserPrompt: initialPrompt,
@@ -94,12 +113,78 @@ func main() {
 		}
 	})
 
-	client := llm.NewClient(cfg.APIKey)
 	registry := tools.CreateRegistryWithLogger(tracker, &approval.NoOpPrompt{}, runLogger)
 
 	m := tui.NewModelWithLogger(client, cfg.Model, systemPrompt, registry, tracker, initialPrompt, runLogger)
 	p := tea.NewProgram(m)
 	m.SetPrompt(tui.NewTuiPrompt(p))
+
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "[TUI_ERROR] %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func listRuns() {
+	runs, err := runlog.ListRuns("", projectpath.GetRoot())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[LIST_RUNS_ERROR] %v\n", err)
+		os.Exit(1)
+	}
+	if len(runs) == 0 {
+		fmt.Println("No runs found for current project.")
+		return
+	}
+	fmt.Printf("%-40s %-20s %-10s %s\n", "RUN ID", "STARTED AT", "STATUS", "PROMPT")
+	for _, r := range runs {
+		prompt := r.UserPrompt
+		if len(prompt) > 40 {
+			prompt = prompt[:37] + "..."
+		}
+		fmt.Printf("%-40s %-20s %-10s %s\n", r.RunID, r.StartedAt, r.Status, prompt)
+	}
+}
+
+func runResume(cfg *config.Config, runID string) {
+	client := llm.NewClient(cfg.APIKey)
+
+	events, err := runlog.LoadRunLog("", projectpath.GetRoot(), runID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[RESUME_ERROR] %v\n", err)
+		os.Exit(1)
+	}
+	snapshot, err := runlog.BuildSnapshot(events)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[RESUME_ERROR] %v\n", err)
+		os.Exit(1)
+	}
+	if snapshot.CWD != projectpath.GetRoot() {
+		fmt.Fprintf(os.Stderr, "[RESUME_ERROR] cwd mismatch: run was started in %s, current cwd is %s\n", snapshot.CWD, projectpath.GetRoot())
+		os.Exit(1)
+	}
+
+	logPath := runlog.RunLogPath("", projectpath.GetRoot(), runID)
+	runLogger, err := runlog.OpenExisting(logPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[RUN_LOG_ERROR] %v\n", err)
+		os.Exit(1)
+	}
+	defer runLogger.Close()
+
+	tracker := execution.NewTracker(func(ev execution.Event) {
+		if err := runLogger.AppendExecutionEvent(ev); err != nil && cfg.Debug {
+			fmt.Fprintf(os.Stderr, "[runlog] %v\n", err)
+		}
+		if cfg.Debug {
+			fmt.Fprintf(os.Stderr, "[execution] %s %s\n", ev.Record.Status, ev.Record.Kind)
+		}
+	})
+
+	registry := tools.CreateRegistryWithLogger(tracker, &approval.NoOpPrompt{}, runLogger)
+	m := tui.NewModelWithLogger(client, cfg.Model, systemPrompt, registry, tracker, "", runLogger)
+	p := tea.NewProgram(m)
+	m.SetPrompt(tui.NewTuiPrompt(p))
+	m.ResumeFrom(snapshot)
 
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "[TUI_ERROR] %v\n", err)

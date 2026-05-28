@@ -131,6 +131,29 @@ type ExecutionStateChangedEvent struct {
 
 var runIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
 
+// OpenExisting opens an existing run log for append-only writing.
+func OpenExisting(path string) (*Logger, error) {
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("open run log for append: %w", err)
+	}
+
+	runID := filepath.Base(path)
+	runID = strings.TrimSuffix(runID, filepath.Ext(runID))
+	if !runIDPattern.MatchString(runID) {
+		_ = file.Close()
+		return nil, fmt.Errorf("invalid run id from path: %s", runID)
+	}
+
+	return &Logger{
+		file:    file,
+		encoder: json.NewEncoder(file),
+		path:    path,
+		runID:   runID,
+		now:     func() time.Time { return time.Now().UTC() },
+	}, nil
+}
+
 func CreateRun(opts Options) (*Logger, error) {
 	if opts.CWD == "" {
 		return nil, errors.New("runlog cwd is required")
@@ -206,6 +229,12 @@ func ProjectSlug(cwd string) string {
 }
 
 func RunLogPath(rootDir, cwd, runID string) string {
+	if rootDir == "" {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			rootDir = filepath.Join(home, ".disco")
+		}
+	}
 	return filepath.Join(rootDir, "projects", ProjectSlug(cwd), "runs", runID+".jsonl")
 }
 

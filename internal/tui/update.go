@@ -151,6 +151,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.submit(msg.text))
 		}
 
+	case resumeContinueMsg:
+		cmds = append(cmds, m.startStreamCmd())
+
 	case streamStartedMsg:
 		m.eventStream = msg.events
 		m.cancelStream = msg.cancel
