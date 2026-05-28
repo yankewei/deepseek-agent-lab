@@ -62,7 +62,6 @@ func RunLoop(ctx context.Context, cfg LoopConfig, initialPrompt string) error {
 		}
 
 		var textBuf strings.Builder
-		var reasoningBuf strings.Builder
 		var toolCalls []llm.ToolCallDef
 
 		for event := range events {
@@ -71,7 +70,7 @@ func RunLoop(ctx context.Context, cfg LoopConfig, initialPrompt string) error {
 				textBuf.WriteString(e.Content)
 				fmt.Fprint(cfg.Output, e.Content)
 			case llm.EventReasoningDelta:
-				reasoningBuf.WriteString(e.Text)
+				// intentionally ignored: reasoning is not sent back to the model
 			case llm.EventToolCall:
 				toolCalls = append(toolCalls, llm.ToolCallDef{ID: e.ID, Name: e.Name, Input: json.RawMessage(e.ArgsJSON)})
 				fmt.Fprintf(cfg.Output, "\n\nTOOL CALL\n%s: %s\n", e.Name, e.ArgsJSON)
@@ -85,7 +84,7 @@ func RunLoop(ctx context.Context, cfg LoopConfig, initialPrompt string) error {
 		assistantText := textBuf.String()
 
 		// Build assistant message.
-		msg := llm.Message{Role: "assistant", Content: assistantText, ReasoningContent: reasoningBuf.String()}
+		msg := llm.Message{Role: "assistant", Content: assistantText}
 		if len(toolCalls) > 0 {
 			msg.ToolCalls = toolCalls
 		}
