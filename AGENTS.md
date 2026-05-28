@@ -60,6 +60,19 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
+## 5. Push Gate
+
+**Never push broken code. Run the full CI check locally before every `git push`.**
+
+Mandatory pre-push checklist (must all pass):
+1. `go mod tidy && git diff --exit-code go.mod go.sum`
+2. `test -z "$(gofmt -l .)"`
+3. `go vet ./...`
+4. `go test ./...`
+5. `go build ./cmd/disco`
+
+If any step fails, fix it first. Only push after all steps are green.
+
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.

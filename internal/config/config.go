@@ -19,7 +19,7 @@ type Config struct {
 
 // Default values.
 const (
-	DefaultModel = "deepseek-v4-pro"
+	DefaultModel = "deepseek-v4-flash"
 )
 
 // Load reads configuration from .env files, environment variables, and flags.
