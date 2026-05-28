@@ -69,6 +69,17 @@ make build-all  # Cross-compile for all platforms
 | `getDiff`     | Show the current git diff                                         |
 | `runCommand`  | Run commands allowed by policy, asking for approval when required |
 
+## Skills
+
+`disco` can load prompt-only skills from:
+
+- `.disco/skills/<skill-name>/SKILL.md` in the current project
+- `~/.agents/skills/<skill-name>/SKILL.md` for user-level skills
+
+It does not scan `~/.disco`. Project skills override user skills with the same
+directory name. Set `DISCO_SKILLS=0` to disable skills, or
+`DISCO_SKILLS_DIR=/path/to/skills` to add one explicit skill root.
+
 ## Safety Model
 
 Commands are classified before execution:

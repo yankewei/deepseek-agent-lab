@@ -49,6 +49,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Debug {
 		t.Error("Debug = true, want default false")
 	}
+	if !cfg.SkillsEnabled {
+		t.Error("SkillsEnabled = false, want default true")
+	}
 }
 
 func TestLoadFlagOverrides(t *testing.T) {
@@ -68,6 +71,23 @@ func TestLoadFlagOverrides(t *testing.T) {
 	}
 	if !cfg.Debug {
 		t.Error("Debug = false, want true")
+	}
+}
+
+func TestLoadSkillsConfigFromEnv(t *testing.T) {
+	t.Setenv("DEEPSEEK_API_KEY", "sk-test-key")
+	t.Setenv("DISCO_SKILLS", "0")
+	t.Setenv("DISCO_SKILLS_DIR", "/tmp/custom-skills")
+
+	cfg, err := loadWithFlagSet(flag.NewFlagSet("test", flag.ContinueOnError), []string{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.SkillsEnabled {
+		t.Fatal("SkillsEnabled = true, want false")
+	}
+	if len(cfg.SkillDirs) != 1 || cfg.SkillDirs[0] != "/tmp/custom-skills" {
+		t.Fatalf("SkillDirs = %+v, want custom dir", cfg.SkillDirs)
 	}
 }
 

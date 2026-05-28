@@ -13,6 +13,7 @@ import (
 	"github.com/yankewei/ds-coding-agent/internal/llm"
 	"github.com/yankewei/ds-coding-agent/internal/projectpath"
 	"github.com/yankewei/ds-coding-agent/internal/runlog"
+	"github.com/yankewei/ds-coding-agent/internal/skills"
 	"github.com/yankewei/ds-coding-agent/internal/tools"
 	"github.com/yankewei/ds-coding-agent/internal/tui"
 )
@@ -57,6 +58,12 @@ runCommand can run a small allowlist of commands without approval, such as: pwd,
 runCommand asks for approval before all other non-blocked commands; include a clear reason.
 If a command is blocked (contains shell operators or is empty), explain what you were trying to learn and choose a safer command.
 
+Skills are prompt-only instruction packages.
+When a skill is active, its injected content includes its skill directory.
+If a skill references supporting files, inspect them with available tools when needed.
+If a skill references scripts, decide whether they are useful for the task and run them only through runCommand.
+Skill scripts do not bypass command policy, approvals, or blocked shell syntax.
+
 After changing files:
 - run validation when it is appropriate for the change
 - call gitStatus to inspect the final working tree state
@@ -94,6 +101,8 @@ func main() {
 	initialPrompt := strings.Join(cfg.RemainingArgs, " ")
 
 	client := llm.NewClient(cfg.APIKey)
+	cfg.SystemPrompt = systemPrompt
+	loadedSkills := loadSkills(cfg)
 	runLogger, err := runlog.CreateRun(runlog.Options{
 		CWD:        projectpath.GetRoot(),
 		UserPrompt: initialPrompt,
@@ -115,7 +124,8 @@ func main() {
 
 	registry := tools.CreateRegistryWithLogger(tracker, &approval.NoOpPrompt{}, runLogger)
 
-	m := tui.NewModelWithLogger(client, cfg.Model, systemPrompt, registry, tracker, initialPrompt, runLogger)
+	m := tui.NewModelWithLogger(client, cfg.Model, cfg.SystemPrompt, registry, tracker, initialPrompt, runLogger)
+	m.SetSkills(loadedSkills)
 	p := tea.NewProgram(m)
 	m.SetPrompt(tui.NewTuiPrompt(p))
 
@@ -147,6 +157,8 @@ func listRuns() {
 
 func runResume(cfg *config.Config, runID string) {
 	client := llm.NewClient(cfg.APIKey)
+	cfg.SystemPrompt = systemPrompt
+	loadedSkills := loadSkills(cfg)
 
 	events, err := runlog.LoadRunLog("", projectpath.GetRoot(), runID)
 	if err != nil {
@@ -181,7 +193,8 @@ func runResume(cfg *config.Config, runID string) {
 	})
 
 	registry := tools.CreateRegistryWithLogger(tracker, &approval.NoOpPrompt{}, runLogger)
-	m := tui.NewModelWithLogger(client, cfg.Model, systemPrompt, registry, tracker, "", runLogger)
+	m := tui.NewModelWithLogger(client, cfg.Model, cfg.SystemPrompt, registry, tracker, "", runLogger)
+	m.SetSkills(loadedSkills)
 	p := tea.NewProgram(m)
 	m.SetPrompt(tui.NewTuiPrompt(p))
 	m.ResumeFrom(snapshot)
@@ -190,6 +203,30 @@ func runResume(cfg *config.Config, runID string) {
 		fmt.Fprintf(os.Stderr, "[TUI_ERROR] %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func loadSkills(cfg *config.Config) []skills.Skill {
+	if !cfg.SkillsEnabled {
+		return nil
+	}
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		if cfg.Debug {
+			fmt.Fprintf(os.Stderr, "[skills] home dir: %v\n", err)
+		}
+		homeDir = ""
+	}
+	loaded, err := skills.Load(skills.DefaultRoots(projectpath.GetRoot(), homeDir, cfg.SkillDirs))
+	if err != nil {
+		if cfg.Debug {
+			fmt.Fprintf(os.Stderr, "[skills] load: %v\n", err)
+		}
+		return nil
+	}
+	if cfg.Debug {
+		fmt.Fprintf(os.Stderr, "[skills] loaded %d skills\n", len(loaded))
+	}
+	return loaded
 }
 
 func mustGetwd() string {

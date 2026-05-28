@@ -15,6 +15,8 @@ type Config struct {
 	Model         string
 	Debug         bool
 	SystemPrompt  string
+	SkillsEnabled bool
+	SkillDirs     []string
 	RemainingArgs []string
 }
 
@@ -34,9 +36,13 @@ func loadWithFlagSet(fs *flag.FlagSet, args []string) (*Config, error) {
 	_ = godotenv.Load()
 
 	cfg := &Config{
-		APIKey: os.Getenv("DEEPSEEK_API_KEY"),
-		Model:  getEnv("MODEL", DefaultModel),
-		Debug:  getEnvBool("DEBUG", false),
+		APIKey:        os.Getenv("DEEPSEEK_API_KEY"),
+		Model:         getEnv("MODEL", DefaultModel),
+		Debug:         getEnvBool("DEBUG", false),
+		SkillsEnabled: getEnvBool("DISCO_SKILLS", true),
+	}
+	if dir := os.Getenv("DISCO_SKILLS_DIR"); dir != "" {
+		cfg.SkillDirs = append(cfg.SkillDirs, dir)
 	}
 
 	// Parse flags.

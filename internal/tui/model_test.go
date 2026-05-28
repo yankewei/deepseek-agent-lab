@@ -14,6 +14,7 @@ import (
 	"github.com/yankewei/ds-coding-agent/internal/execution"
 	"github.com/yankewei/ds-coding-agent/internal/llm"
 	"github.com/yankewei/ds-coding-agent/internal/runlog"
+	"github.com/yankewei/ds-coding-agent/internal/skills"
 	"github.com/yankewei/ds-coding-agent/internal/tools"
 )
 
@@ -170,6 +171,58 @@ func TestMessagesForRequestDoesNotDuplicateSystem(t *testing.T) {
 	}
 	if got[0].Role != "system" || got[1].Role != "user" {
 		t.Fatalf("messages = %+v", got)
+	}
+}
+
+func TestSubmitInjectsMatchingSkillIntoSystemPrompt(t *testing.T) {
+	m := NewModel(nil, "", "base prompt", tools.NewRegistry(), execution.NewTracker(nil), "")
+	m.SetSkills([]skills.Skill{
+		{Name: "write", Title: "Write", Description: "Rewrite prose", Content: "# Write\n\nUse concise prose."},
+	})
+
+	_ = m.submit("please rewrite this paragraph")
+
+	got := m.messagesForRequest()
+	if len(got) != 2 {
+		t.Fatalf("len(messages) = %d, want 2", len(got))
+	}
+	if got[0].Role != "system" {
+		t.Fatalf("first role = %q, want system", got[0].Role)
+	}
+	if !strings.Contains(got[0].Content, "## Active Skills") {
+		t.Fatalf("system prompt = %q, want active skills", got[0].Content)
+	}
+	if !strings.Contains(got[0].Content, "# Write") {
+		t.Fatalf("system prompt = %q, want write skill", got[0].Content)
+	}
+}
+
+func TestSubmitWithoutMatchingSkillKeepsBaseSystemPrompt(t *testing.T) {
+	m := NewModel(nil, "", "base prompt", tools.NewRegistry(), execution.NewTracker(nil), "")
+	m.SetSkills([]skills.Skill{
+		{Name: "write", Title: "Write", Description: "Rewrite prose", Content: "# Write\n\nUse concise prose."},
+	})
+
+	_ = m.submit("inspect the project")
+
+	got := m.messagesForRequest()
+	if got[0].Content != "base prompt" {
+		t.Fatalf("system prompt = %q, want base prompt", got[0].Content)
+	}
+}
+
+func TestSlashClearStillAllowsSkillReinjection(t *testing.T) {
+	m := NewModel(nil, "", "base prompt", tools.NewRegistry(), execution.NewTracker(nil), "")
+	m.SetSkills([]skills.Skill{
+		{Name: "hunt", Title: "Hunt", Description: "Debug failures", Content: "# Hunt\n\nFind root cause first."},
+	})
+
+	_ = m.handleSlashCommand("/clear")
+	_ = m.submit("debug this failure")
+
+	got := m.messagesForRequest()
+	if !strings.Contains(got[0].Content, "# Hunt") {
+		t.Fatalf("system prompt = %q, want hunt skill after clear", got[0].Content)
 	}
 }
 

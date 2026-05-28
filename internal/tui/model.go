@@ -17,6 +17,7 @@ import (
 	"github.com/yankewei/ds-coding-agent/internal/execution"
 	"github.com/yankewei/ds-coding-agent/internal/llm"
 	"github.com/yankewei/ds-coding-agent/internal/runlog"
+	"github.com/yankewei/ds-coding-agent/internal/skills"
 	"github.com/yankewei/ds-coding-agent/internal/tools"
 	"github.com/yankewei/ds-coding-agent/internal/tui/slashcmd"
 )
@@ -37,7 +38,9 @@ type Model struct {
 	// Agent config
 	client       *openai.Client
 	modelName    string
+	basePrompt   string
 	systemPrompt string
+	skills       []skills.Skill
 	registry     *tools.Registry
 	tracker      *execution.Tracker
 	approval     approval.Prompt
@@ -109,6 +112,7 @@ func NewModelWithLogger(client *openai.Client, modelName, systemPrompt string, r
 		keys:           DefaultKeyMap(),
 		client:         client,
 		modelName:      modelName,
+		basePrompt:     systemPrompt,
 		systemPrompt:   systemPrompt,
 		registry:       registry,
 		tracker:        tracker,
@@ -119,6 +123,11 @@ func NewModelWithLogger(client *openai.Client, modelName, systemPrompt string, r
 		toolCallInputs: make(map[string]string),
 		initialPrompt:  initialPrompt,
 	}
+}
+
+// SetSkills configures the skills available for automatic prompt injection.
+func (m *Model) SetSkills(all []skills.Skill) {
+	m.skills = append([]skills.Skill(nil), all...)
 }
 
 // Init implements tea.Model.
@@ -150,10 +159,8 @@ func (m *Model) submit(text string) tea.Cmd {
 	if strings.HasPrefix(text, "/") {
 		return m.handleSlashCommand(text)
 	}
+	m.refreshSystemPrompt(text)
 	m.isRunning = true
-	if m.systemPrompt != "" && len(m.messages) == 0 {
-		m.messages = append(m.messages, llm.Message{Role: "system", Content: m.systemPrompt})
-	}
 	m.messages = append(m.messages, llm.Message{Role: "user", Content: text})
 	m.messageList.Add(Message{Type: MsgUser, Content: text, Status: StatusDone})
 	m.recordRunLog(m.runLogger.AppendUserMessage(text))
@@ -329,14 +336,21 @@ func (m *Model) startStreamCmd() tea.Cmd {
 
 func (m *Model) messagesForRequest() []llm.Message {
 	out := make([]llm.Message, 0, len(m.messages)+1)
-	if m.systemPrompt != "" && (len(m.messages) == 0 || m.messages[0].Role != "system") {
+	if m.systemPrompt != "" {
 		out = append(out, llm.Message{Role: "system", Content: m.systemPrompt})
 	}
 	for _, msg := range m.messages {
+		if msg.Role == "system" {
+			continue
+		}
 		msg.ReasoningContent = ""
 		out = append(out, msg)
 	}
 	return out
+}
+
+func (m *Model) refreshSystemPrompt(text string) {
+	m.systemPrompt = skills.Inject(m.basePrompt, skills.Match(m.skills, text))
 }
 
 // executeToolsCmd runs the given tool calls in parallel.
@@ -442,6 +456,7 @@ func newMarkdownRenderer(width int) *glamour.TermRenderer {
 func (m *Model) ResumeFrom(snapshot *runlog.Snapshot) {
 	m.resumeSnapshot = snapshot
 	m.messages = append([]llm.Message(nil), snapshot.Messages...)
+	m.refreshSystemPrompt(lastUserMessage(m.messages))
 
 	for _, msg := range m.messages {
 		switch msg.Role {
@@ -502,6 +517,15 @@ func (m *Model) ResumeFrom(snapshot *runlog.Snapshot) {
 			Status:  StatusDone,
 		})
 	}
+}
+
+func lastUserMessage(messages []llm.Message) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "user" {
+			return messages[i].Content
+		}
+	}
+	return ""
 }
 
 func boundedContentWidth(terminalWidth int) int {
