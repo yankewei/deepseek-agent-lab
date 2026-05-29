@@ -13,11 +13,10 @@ func (m *Model) View() tea.View {
 
 	var sections []string
 	sections = append(sections, m.messageList.Render())
-
-	if !m.statusLine.IsIdle() {
-		sections = append(sections, m.statusLine.Render())
+	if activity := m.statusLine.RenderActivity(); activity != "" {
+		sections = append(sections, activity)
 	}
-
+	sections = append(sections, m.renderStatusLine())
 	sections = append(sections, m.renderEditor())
 	if menu := m.renderSlashCommandMenu(); menu != "" {
 		sections = append(sections, menu)

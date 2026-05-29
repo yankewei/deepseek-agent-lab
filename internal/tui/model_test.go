@@ -637,17 +637,145 @@ func TestRenderEditorHasBorder(t *testing.T) {
 		t.Fatalf("bordered editor height %d should be greater than raw editor height %d", lipgloss.Height(bordered), lipgloss.Height(raw))
 	}
 	// Check for at least one rounded-border corner character.
-	if !strings.Contains(bordered, "╭") {
+	if !strings.Contains(bordered, "╰") {
 		t.Fatalf("renderEditor output should contain rounded border corner, got:\n%s", bordered)
+	}
+}
+func TestRenderStatusLineHasBorder(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 20})
+	m = updated.(*Model)
+	bordered := m.renderStatusLine()
+	if lipgloss.Height(bordered) <= 1 {
+		t.Fatalf("bordered status line height %d should be greater than 1", lipgloss.Height(bordered))
+	}
+	if !strings.Contains(bordered, "╭") {
+		t.Fatalf("renderStatusLine output should contain rounded border corner, got:\n%s", bordered)
+	}
+}
+func TestStatusLineShowsModelName(t *testing.T) {
+	m := NewModel(nil, "deepseek-chat", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 20})
+	m = updated.(*Model)
+	rendered := m.renderStatusLine()
+	if !strings.Contains(rendered, "deepseek-chat") {
+		t.Fatalf("status line should contain model name, got:\n%s", rendered)
+	}
+	if strings.Contains(rendered, "ctx") {
+		t.Fatalf("status line should not show ctx when no tokens, got:\n%s", rendered)
+	}
+}
+func TestStatusLineShowsContextTokens(t *testing.T) {
+	m := NewModel(nil, "deepseek-chat", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
+	m = updated.(*Model)
+	m.statusLine.SetContextTokens(1234)
+	rendered := m.renderStatusLine()
+	if !strings.Contains(rendered, "deepseek-chat") {
+		t.Fatalf("status line should contain model name, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "ctx 1.2k / 1.0M (0.1%)") {
+		t.Fatalf("status line should show formatted ctx, got:\n%s", rendered)
+	}
+}
+func TestStatusLineShowsContextTokensWithoutPercentForUnknownModel(t *testing.T) {
+	m := NewModel(nil, "custom-model", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
+	m = updated.(*Model)
+	m.statusLine.SetContextTokens(1234)
+	rendered := m.renderStatusLine()
+	if !strings.Contains(rendered, "ctx 1.2k") {
+		t.Fatalf("status line should show formatted ctx, got:\n%s", rendered)
+	}
+	if strings.Contains(rendered, "%") {
+		t.Fatalf("status line should not show percent for unknown model, got:\n%s", rendered)
+	}
+}
+func TestStatusLineShowsTinyContextPercent(t *testing.T) {
+	m := NewModel(nil, "deepseek-v4-flash", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
+	m = updated.(*Model)
+	m.statusLine.SetContextTokens(1)
+	rendered := m.renderStatusLine()
+	if !strings.Contains(rendered, "ctx 1 / 1.0M (<0.1%)") {
+		t.Fatalf("status line should show tiny ctx percent, got:\n%s", rendered)
+	}
+}
+func TestActivityRendersAboveStatusLine(t *testing.T) {
+	m := NewModel(nil, "deepseek-chat", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
+	m = updated.(*Model)
+	m.statusLine.SetMode(ModeStreaming)
+
+	status := m.renderStatusLine()
+	if strings.Contains(status, "Responding") {
+		t.Fatalf("status line should not contain responding activity, got:\n%s", status)
+	}
+
+	view := m.View().Content
+	activityIndex := strings.Index(view, "Responding...")
+	statusIndex := strings.Index(view, "deepseek-chat")
+	if activityIndex < 0 {
+		t.Fatalf("view should contain responding activity, got:\n%s", view)
+	}
+	if statusIndex < 0 {
+		t.Fatalf("view should contain status line model, got:\n%s", view)
+	}
+	if activityIndex > statusIndex {
+		t.Fatalf("activity should render above status line, got:\n%s", view)
+	}
+}
+func TestActivityRendersThinkingAndExecuting(t *testing.T) {
+	sl := NewStatusLine()
+
+	sl.SetThinking("step one\nstep two")
+	thinking := sl.RenderActivity()
+	if !strings.Contains(thinking, "Thinking: step one step two") {
+		t.Fatalf("thinking activity not rendered, got:\n%s", thinking)
+	}
+
+	sl.SetMode(ModeExecuting)
+	executing := sl.RenderActivity()
+	if !strings.Contains(executing, "Executing...") {
+		t.Fatalf("executing activity not rendered, got:\n%s", executing)
+	}
+}
+func TestIdleActivityDoesNotConsumeLayoutHeight(t *testing.T) {
+	m := NewModel(nil, "deepseek-chat", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
+	m = updated.(*Model)
+	if activity := m.statusLine.RenderActivity(); activity != "" {
+		t.Fatalf("idle activity should be empty, got:\n%s", activity)
+	}
+}
+
+func TestUpdateLayoutAccountsForActivityLine(t *testing.T) {
+	m := NewModel(nil, "deepseek-chat", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	m.statusLine.SetMode(ModeStreaming)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
+	m = updated.(*Model)
+
+	activityHeight := lipgloss.Height(m.statusLine.RenderActivity())
+	statusHeight := lipgloss.Height(m.renderStatusLine())
+	editorHeight := lipgloss.Height(m.renderEditor())
+	menuHeight := lipgloss.Height(m.renderSlashCommandMenu())
+	expectedListHeight := 30 - 1 - activityHeight - statusHeight - editorHeight - menuHeight
+	if expectedListHeight < 5 {
+		expectedListHeight = 5
+	}
+	if m.messageList.height != expectedListHeight {
+		t.Fatalf("message list height = %d, want %d", m.messageList.height, expectedListHeight)
 	}
 }
 func TestUpdateLayoutAccountsForBorderedInput(t *testing.T) {
 	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 20})
 	m = updated.(*Model)
+	activityHeight := lipgloss.Height(m.statusLine.RenderActivity())
+	statusHeight := lipgloss.Height(m.renderStatusLine())
 	editorHeight := lipgloss.Height(m.renderEditor())
 	menuHeight := lipgloss.Height(m.renderSlashCommandMenu())
-	expectedListHeight := 20 - 1 - editorHeight - menuHeight
+	expectedListHeight := 20 - 1 - activityHeight - statusHeight - editorHeight - menuHeight
 	if expectedListHeight < 5 {
 		expectedListHeight = 5
 	}

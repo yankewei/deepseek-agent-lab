@@ -25,9 +25,15 @@ import (
 var (
 	// inputBoxStyle wraps the text input with a visible border.
 	inputBoxStyle = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("8")).
-		Padding(0, 1)
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("8")).
+			Padding(0, 1)
+
+	// statusLineBoxStyle wraps the status line with a visible border.
+	statusLineBoxStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("5")).
+				Padding(0, 1)
 )
 
 // Model is the Bubble Tea model for the agent TUI.
@@ -118,10 +124,12 @@ func NewModelWithLogger(client *openai.Client, modelName, systemPrompt string, r
 	renderer := newMarkdownRenderer(80, style)
 	ml := NewMessageList()
 	ml.SetRenderer(renderer)
+	sl := NewStatusLine()
+	sl.SetModelName(modelName)
 	return &Model{
 		editor:         ti,
 		messageList:    ml,
-		statusLine:     NewStatusLine(),
+		statusLine:     sl,
 		keys:           DefaultKeyMap(),
 		client:         client,
 		modelName:      modelName,
@@ -485,13 +493,11 @@ func (m *Model) updateLayout() {
 	}
 	m.editor.SetWidth(innerWidth)
 	helpBarHeight := 1
+	activityHeight := lipgloss.Height(m.statusLine.RenderActivity())
+	statusHeight := lipgloss.Height(m.renderStatusLine())
 	editorHeight := lipgloss.Height(m.renderEditor())
 	menuHeight := lipgloss.Height(m.renderSlashCommandMenu())
-	statusHeight := 0
-	if !m.statusLine.IsIdle() {
-		statusHeight = 1
-	}
-	messageListHeight := m.height - helpBarHeight - editorHeight - menuHeight - statusHeight
+	messageListHeight := m.height - helpBarHeight - activityHeight - statusHeight - editorHeight - menuHeight
 	if messageListHeight < 5 {
 		messageListHeight = 5
 	}
@@ -652,13 +658,24 @@ func boundedContentWidth(terminalWidth int) int {
 	return width
 }
 
+// renderStatusLine returns the status line wrapped in a visible border.
+func (m *Model) renderStatusLine() string {
+	width := m.contentWidth
+	if width <= 0 {
+		width = boundedContentWidth(m.width)
+	}
+	style := statusLineBoxStyle.BorderBottom(false)
+	return style.Width(width).Render(m.statusLine.Render())
+}
+
 // renderEditor returns the editor wrapped in a visible border.
 func (m *Model) renderEditor() string {
 	width := m.contentWidth
 	if width <= 0 {
 		width = boundedContentWidth(m.width)
 	}
-	return inputBoxStyle.Width(width).Render(m.editor.View())
+	style := inputBoxStyle.BorderTop(false)
+	return style.Width(width).Render(m.editor.View())
 }
 
 func (m *Model) renderHelpBar() string {

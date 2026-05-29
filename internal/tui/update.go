@@ -239,6 +239,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if thinking := m.messageList.Find(MsgThinking, StatusStreaming); thinking != nil {
 				thinking.Status = StatusDone
 			}
+			m.statusLine.SetContextTokens(e.Usage.PromptTokens)
 			m.statusLine.SetMode(ModeIdle)
 			m.statusLine.ClearThinking()
 		case llm.EventError:

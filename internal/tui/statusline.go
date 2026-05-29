@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"charm.land/bubbles/v2/spinner"
@@ -23,6 +24,8 @@ type StatusLine struct {
 	spinner         spinner.Model
 	mode            StatusMode
 	thinkingContent string
+	modelName       string
+	promptTokens    int
 }
 
 // NewStatusLine creates a new status line with a default spinner.
@@ -50,11 +53,25 @@ func (s *StatusLine) View() tea.View {
 	return tea.NewView(s.Render())
 }
 
-// Render returns the rendered status line, or an empty string when idle.
+// Render returns the rendered status line.
 func (s *StatusLine) Render() string {
+	var parts []string
+	if s.modelName != "" {
+		parts = append(parts, s.modelName)
+	}
+	if s.promptTokens > 0 {
+		parts = append(parts, s.renderContextUsage())
+	}
+	text := strings.Join(parts, "  ")
+	return lipgloss.NewStyle().Foreground(lipgloss.Color("5")).Render(text)
+}
+
+// RenderActivity returns transient model activity for display above the status line.
+func (s *StatusLine) RenderActivity() string {
 	if s.mode == ModeIdle {
 		return ""
 	}
+
 	var label string
 	switch s.mode {
 	case ModeStreaming:
@@ -67,8 +84,12 @@ func (s *StatusLine) Render() string {
 		}
 	case ModeExecuting:
 		label = "Executing..."
+	default:
+		return ""
 	}
-	return s.spinner.View() + "  " + label
+
+	text := strings.Join([]string{s.spinner.View(), label}, "  ")
+	return lipgloss.NewStyle().Foreground(lipgloss.Color("5")).Render(text)
 }
 
 // SetMode updates the status mode.
@@ -87,9 +108,60 @@ func (s *StatusLine) ClearThinking() {
 	s.thinkingContent = ""
 }
 
+// SetModelName sets the model name displayed in the status line.
+func (s *StatusLine) SetModelName(name string) {
+	s.modelName = name
+}
+
+// SetContextTokens sets the prompt token count for context usage display.
+func (s *StatusLine) SetContextTokens(tokens int) {
+	s.promptTokens = tokens
+}
+
 // IsIdle returns true when no status should be shown.
 func (s *StatusLine) IsIdle() bool {
 	return s.mode == ModeIdle
+}
+
+func (s *StatusLine) renderContextUsage() string {
+	if s.promptTokens <= 0 {
+		return ""
+	}
+	window := contextWindowForModel(s.modelName)
+	if window <= 0 {
+		return "ctx " + formatTokens(s.promptTokens)
+	}
+	return fmt.Sprintf("ctx %s / %s (%s)", formatTokens(s.promptTokens), formatTokens(window), formatPercent(s.promptTokens, window))
+}
+
+func contextWindowForModel(model string) int {
+	switch strings.ToLower(strings.TrimSpace(model)) {
+	case "deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner":
+		return 1_000_000
+	default:
+		return 0
+	}
+}
+
+func formatTokens(n int) string {
+	if n >= 1_000_000 {
+		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
+	}
+	if n < 1000 {
+		return fmt.Sprintf("%d", n)
+	}
+	return fmt.Sprintf("%.1fk", float64(n)/1000)
+}
+
+func formatPercent(used, total int) string {
+	if used <= 0 || total <= 0 {
+		return "0.0%"
+	}
+	percent := float64(used) / float64(total) * 100
+	if percent < 0.1 {
+		return "<0.1%"
+	}
+	return fmt.Sprintf("%.1f%%", percent)
 }
 
 func truncate(s string, maxLen int) string {

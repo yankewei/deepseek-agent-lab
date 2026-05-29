@@ -18,9 +18,10 @@ func Stream(ctx context.Context, client *openai.Client, model string, messages [
 	}
 
 	req := openai.ChatCompletionRequest{
-		Model:    model,
-		Messages: msgs,
-		Stream:   true,
+		Model:         model,
+		Messages:      msgs,
+		Stream:        true,
+		StreamOptions: &openai.StreamOptions{IncludeUsage: true},
 	}
 
 	if len(tools) > 0 {
@@ -52,6 +53,7 @@ func Stream(ctx context.Context, client *openai.Client, model string, messages [
 		sentToolCalls := make(map[string]bool)
 		var reasoningBuf strings.Builder
 
+		var lastUsage Usage
 		for {
 			resp, err := stream.Recv()
 			if err != nil {
@@ -63,11 +65,19 @@ func Stream(ctx context.Context, client *openai.Client, model string, messages [
 							sentToolCalls[acc.ID] = true
 						}
 					}
-					events <- EventFinish{FinishReason: "stop", ReasoningContent: reasoningBuf.String()}
+					events <- EventFinish{FinishReason: "stop", ReasoningContent: reasoningBuf.String(), Usage: lastUsage}
 				} else {
 					events <- EventError{Err: err}
 				}
 				return
+			}
+
+			if resp.Usage != nil {
+				lastUsage = Usage{
+					PromptTokens:     resp.Usage.PromptTokens,
+					CompletionTokens: resp.Usage.CompletionTokens,
+					TotalTokens:      resp.Usage.TotalTokens,
+				}
 			}
 
 			if len(resp.Choices) == 0 {
@@ -117,7 +127,7 @@ func Stream(ctx context.Context, client *openai.Client, model string, messages [
 						sentToolCalls[acc.ID] = true
 					}
 				}
-				events <- EventFinish{FinishReason: string(choice.FinishReason), ReasoningContent: reasoningBuf.String()}
+				events <- EventFinish{FinishReason: string(choice.FinishReason), ReasoningContent: reasoningBuf.String(), Usage: lastUsage}
 				return
 			}
 		}
