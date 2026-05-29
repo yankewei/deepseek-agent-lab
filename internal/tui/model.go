@@ -191,6 +191,7 @@ func (m *Model) submit(text string) tea.Cmd {
 	m.recordRunLog(m.runLogger.AppendUserMessage(text))
 	m.recordRunLog(m.runLogger.AppendRunStatus("running"))
 	m.statusLine.SetMode(ModeStreaming)
+	m.scrollMessageListToBottom()
 	m.editor.Reset()
 	m.turnCtx, m.cancelTurn = context.WithCancel(context.Background())
 	return m.startStreamCmd()
@@ -269,6 +270,7 @@ func (m *Model) handleSkillCommand(text string) tea.Cmd {
 	m.recordRunLog(m.runLogger.AppendUserMessage(content))
 	m.recordRunLog(m.runLogger.AppendRunStatus("running"))
 	m.statusLine.SetMode(ModeStreaming)
+	m.scrollMessageListToBottom()
 	m.editor.Reset()
 	m.turnCtx, m.cancelTurn = context.WithCancel(context.Background())
 	return m.startStreamCmd()
@@ -492,19 +494,21 @@ func (m *Model) updateLayout() {
 		innerWidth = 1
 	}
 	m.editor.SetWidth(innerWidth)
-	helpBarHeight := 1
-	activityHeight := lipgloss.Height(m.statusLine.RenderActivity())
-	statusHeight := lipgloss.Height(m.renderStatusLine())
-	editorHeight := lipgloss.Height(m.renderEditor())
-	menuHeight := lipgloss.Height(m.renderSlashCommandMenu())
-	messageListHeight := m.height - helpBarHeight - activityHeight - statusHeight - editorHeight - menuHeight
-	if messageListHeight < 5 {
-		messageListHeight = 5
-	}
-	m.messageList.SetSize(m.contentWidth, messageListHeight)
+	m.messageList.SetSize(m.contentWidth, m.currentMessageListHeight())
 	if m.contentWidth != previousContentWidth || m.renderer == nil {
 		m.rebuildRenderer()
 	}
+}
+
+func (m *Model) scrollMessageListToBottom() {
+	height := m.currentMessageListHeight()
+	m.messageList.SetSize(m.contentWidth, height)
+	m.messageList.ScrollToBottomHeight(height)
+}
+
+func (m *Model) messageListAtBottom() bool {
+	height := m.currentMessageListHeight()
+	return m.messageList.AtBottomHeight(height)
 }
 
 // SetPrompt rebuilds the tool registry with the given approval prompt.

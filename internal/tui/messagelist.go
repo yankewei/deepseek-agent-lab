@@ -125,10 +125,15 @@ func (ml *MessageList) offsetToIdxLine(absOffset int) (int, int) {
 
 // Render returns the visible portion of the message list.
 func (ml *MessageList) Render() string {
+	return ml.RenderHeight(ml.height)
+}
+
+// RenderHeight returns the visible portion of the message list for a specific height.
+func (ml *MessageList) RenderHeight(height int) string {
 	if len(ml.messages) == 0 {
 		return ""
 	}
-	budget := max(ml.height, 0)
+	budget := max(height, 0)
 	lines := make([]string, 0, budget)
 	currentIdx := ml.offsetIdx
 	currentOffset := ml.offsetLine
@@ -185,10 +190,15 @@ func (ml *MessageList) ScrollDown(n int) {
 
 // ScrollToBottom scrolls to show the last messages.
 func (ml *MessageList) ScrollToBottom() {
+	ml.ScrollToBottomHeight(ml.height)
+}
+
+// ScrollToBottomHeight scrolls to the bottom for a specific viewport height.
+func (ml *MessageList) ScrollToBottomHeight(height int) {
 	if len(ml.messages) == 0 {
 		return
 	}
-	maxOffset := max(ml.totalHeight()-ml.height, 0)
+	maxOffset := max(ml.totalHeight()-height, 0)
 	ml.offsetIdx, ml.offsetLine = ml.offsetToIdxLine(maxOffset)
 }
 
@@ -200,10 +210,15 @@ func (ml *MessageList) ScrollToTop() {
 
 // AtBottom returns whether the list is showing content at the bottom.
 func (ml *MessageList) AtBottom() bool {
+	return ml.AtBottomHeight(ml.height)
+}
+
+// AtBottomHeight returns whether the list is at bottom for a specific viewport height.
+func (ml *MessageList) AtBottomHeight(height int) bool {
 	if len(ml.messages) == 0 {
 		return true
 	}
-	maxOffset := max(ml.totalHeight()-ml.height, 0)
+	maxOffset := max(ml.totalHeight()-height, 0)
 	return ml.YOffset() == maxOffset
 }
 
@@ -295,8 +310,8 @@ func (ml *MessageList) renderMessageByIdx(idx int) []string {
 }
 
 func (ml *MessageList) renderUser(msg Message) []string {
-	prefix := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6")).Render("You: ")
-	return []string{prefix + msg.Content}
+	line := "You: " + msg.Content
+	return []string{lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("5")).Render(line)}
 }
 
 func (ml *MessageList) renderAssistant(idx int) []string {
@@ -315,17 +330,23 @@ func (ml *MessageList) renderAssistant(idx int) []string {
 			}
 		}
 	}
-	if msg.Status == StatusStreaming {
-		content += "▋"
-	}
 	return strings.Split(content, "\n")
 }
 
 var mutedItalicStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
 
 func (ml *MessageList) renderThinking(msg Message) []string {
-	return []string{mutedItalicStyle.Render("Thinking: " + msg.Content)}
+	if msg.Status == StatusStreaming {
+		return []string{mutedItalicStyle.Render("Thinking" + thinkingDots(msg.Content))}
+	}
+	return []string{mutedItalicStyle.Render("Thinking complete")}
 }
+
+func thinkingDots(content string) string {
+	count := len([]rune(content))%3 + 1
+	return strings.Repeat(".", count)
+}
+
 func (ml *MessageList) renderToolCall(msg Message) []string {
 	name, _ := msg.Metadata["tool_name"].(string)
 	line := "▶ " + name

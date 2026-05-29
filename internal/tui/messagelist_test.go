@@ -189,3 +189,55 @@ func TestMessageListThinkingRowMutedItalic(t *testing.T) {
 		t.Fatalf("expected ANSI italic sequence in rendered thinking row, got %q", rendered)
 	}
 }
+
+func TestMessageListThinkingRowHidesContent(t *testing.T) {
+	ml := NewMessageList()
+	ml.SetSize(40, 10)
+	ml.Add(Message{Type: MsgThinking, Content: "private reasoning content", Status: StatusStreaming})
+
+	rendered := ml.Render()
+	if !strings.Contains(rendered, "Thinking") {
+		t.Fatalf("expected thinking indicator, got %q", rendered)
+	}
+	if strings.Contains(rendered, "private reasoning content") {
+		t.Fatalf("thinking row should not expose reasoning content, got %q", rendered)
+	}
+}
+
+func TestMessageListThinkingRowDotsChangeWithContent(t *testing.T) {
+	ml := NewMessageList()
+	first := ml.renderThinking(Message{Type: MsgThinking, Content: "a", Status: StatusStreaming})[0]
+	second := ml.renderThinking(Message{Type: MsgThinking, Content: "ab", Status: StatusStreaming})[0]
+
+	if first == second {
+		t.Fatalf("thinking indicator should change as content streams, got %q", first)
+	}
+}
+
+func TestMessageListUserRowBoldPurple(t *testing.T) {
+	ml := NewMessageList()
+	ml.SetSize(40, 10)
+	ml.Add(Message{Type: MsgUser, Content: "hello"})
+
+	rendered := ml.Render()
+	if !strings.Contains(rendered, "\x1b[1") {
+		t.Fatalf("expected ANSI bold sequence in rendered user row, got %q", rendered)
+	}
+	if !strings.Contains(rendered, ";35") && !strings.Contains(rendered, "\x1b[35") {
+		t.Fatalf("expected ANSI purple sequence in rendered user row, got %q", rendered)
+	}
+	if !strings.Contains(rendered, "You: hello") {
+		t.Fatalf("expected full user line content, got %q", rendered)
+	}
+}
+
+func TestMessageListStreamingAssistantDoesNotAppendCursor(t *testing.T) {
+	ml := NewMessageList()
+	ml.SetSize(40, 10)
+	ml.Add(Message{Type: MsgAssistant, Content: "hello", Status: StatusStreaming})
+
+	rendered := ml.Render()
+	if strings.Contains(rendered, "▋") {
+		t.Fatalf("streaming assistant should not append cursor, got %q", rendered)
+	}
+}

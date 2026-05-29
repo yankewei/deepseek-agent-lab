@@ -701,43 +701,20 @@ func TestStatusLineShowsTinyContextPercent(t *testing.T) {
 		t.Fatalf("status line should show tiny ctx percent, got:\n%s", rendered)
 	}
 }
-func TestActivityRendersAboveStatusLine(t *testing.T) {
+func TestFooterDoesNotRenderActivityText(t *testing.T) {
 	m := NewModel(nil, "deepseek-chat", "", tools.NewRegistry(), execution.NewTracker(nil), "")
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
 	m = updated.(*Model)
 	m.statusLine.SetMode(ModeStreaming)
 
-	status := m.renderStatusLine()
-	if strings.Contains(status, "Responding") {
-		t.Fatalf("status line should not contain responding activity, got:\n%s", status)
-	}
-
 	view := m.View().Content
-	activityIndex := strings.Index(view, "Responding...")
-	statusIndex := strings.Index(view, "deepseek-chat")
-	if activityIndex < 0 {
-		t.Fatalf("view should contain responding activity, got:\n%s", view)
+	for _, text := range []string{"Responding...", "Thinking...", "Executing..."} {
+		if strings.Contains(view, text) {
+			t.Fatalf("footer should not contain activity text %q, got:\n%s", text, view)
+		}
 	}
-	if statusIndex < 0 {
-		t.Fatalf("view should contain status line model, got:\n%s", view)
-	}
-	if activityIndex > statusIndex {
-		t.Fatalf("activity should render above status line, got:\n%s", view)
-	}
-}
-func TestActivityRendersThinkingAndExecuting(t *testing.T) {
-	sl := NewStatusLine()
-
-	sl.SetThinking("step one\nstep two")
-	thinking := sl.RenderActivity()
-	if !strings.Contains(thinking, "Thinking: step one step two") {
-		t.Fatalf("thinking activity not rendered, got:\n%s", thinking)
-	}
-
-	sl.SetMode(ModeExecuting)
-	executing := sl.RenderActivity()
-	if !strings.Contains(executing, "Executing...") {
-		t.Fatalf("executing activity not rendered, got:\n%s", executing)
+	if !strings.Contains(view, "deepseek-chat") {
+		t.Fatalf("view should still contain status line model, got:\n%s", view)
 	}
 }
 func TestIdleActivityDoesNotConsumeLayoutHeight(t *testing.T) {
@@ -755,14 +732,7 @@ func TestUpdateLayoutAccountsForActivityLine(t *testing.T) {
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
 	m = updated.(*Model)
 
-	activityHeight := lipgloss.Height(m.statusLine.RenderActivity())
-	statusHeight := lipgloss.Height(m.renderStatusLine())
-	editorHeight := lipgloss.Height(m.renderEditor())
-	menuHeight := lipgloss.Height(m.renderSlashCommandMenu())
-	expectedListHeight := 30 - 1 - activityHeight - statusHeight - editorHeight - menuHeight
-	if expectedListHeight < 5 {
-		expectedListHeight = 5
-	}
+	expectedListHeight := m.currentMessageListHeight()
 	if m.messageList.height != expectedListHeight {
 		t.Fatalf("message list height = %d, want %d", m.messageList.height, expectedListHeight)
 	}
@@ -771,14 +741,7 @@ func TestUpdateLayoutAccountsForBorderedInput(t *testing.T) {
 	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 20})
 	m = updated.(*Model)
-	activityHeight := lipgloss.Height(m.statusLine.RenderActivity())
-	statusHeight := lipgloss.Height(m.renderStatusLine())
-	editorHeight := lipgloss.Height(m.renderEditor())
-	menuHeight := lipgloss.Height(m.renderSlashCommandMenu())
-	expectedListHeight := 20 - 1 - activityHeight - statusHeight - editorHeight - menuHeight
-	if expectedListHeight < 5 {
-		expectedListHeight = 5
-	}
+	expectedListHeight := m.currentMessageListHeight()
 	if m.messageList.height != expectedListHeight {
 		t.Fatalf("message list height = %d, want %d", m.messageList.height, expectedListHeight)
 	}
@@ -797,6 +760,91 @@ func TestViewRequestsMouseModeCellMotion(t *testing.T) {
 	v := m.View()
 	if v.MouseMode != tea.MouseModeCellMotion {
 		t.Fatalf("MouseMode = %v, want MouseModeCellMotion", v.MouseMode)
+	}
+}
+func TestViewAnchorsStatusLineAndEditorAtBottom(t *testing.T) {
+	m := NewModel(nil, "deepseek-chat", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
+	m = updated.(*Model)
+
+	view := m.View().Content
+	if got := lipgloss.Height(view); got != 20 {
+		t.Fatalf("view height = %d, want 20", got)
+	}
+	if !strings.Contains(view, "deepseek-chat") {
+		t.Fatalf("view should contain status line, got:\n%s", view)
+	}
+	if !strings.Contains(view, ">") {
+		t.Fatalf("view should contain editor prompt, got:\n%s", view)
+	}
+}
+
+func TestViewDoesNotOverflowSmallTerminal(t *testing.T) {
+	m := NewModel(nil, "deepseek-chat", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 8})
+	m = updated.(*Model)
+	for i := 0; i < 20; i++ {
+		m.messageList.Add(Message{Type: MsgAssistant, Content: fmt.Sprintf("line %02d", i), Status: StatusDone})
+	}
+
+	view := m.View().Content
+	if got := lipgloss.Height(view); got > 8 {
+		t.Fatalf("view height = %d, want <= 8", got)
+	}
+	if !strings.Contains(view, "deepseek-chat") {
+		t.Fatalf("view should contain status line, got:\n%s", view)
+	}
+	if !strings.Contains(view, ">") {
+		t.Fatalf("view should contain editor prompt, got:\n%s", view)
+	}
+}
+
+func TestStreamingTextDeltaAutoScrollsMessageList(t *testing.T) {
+	m := NewModel(nil, "deepseek-chat", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
+	m = updated.(*Model)
+	updated, _ = m.Update(userSubmittedMsg{text: "hello"})
+	m = updated.(*Model)
+	updated, _ = m.Update(streamStartedMsg{events: closedEventStream(), cancel: func() {}})
+	m = updated.(*Model)
+
+	for i := 0; i < 20; i++ {
+		updated, _ = m.Update(streamEventMsg{event: llm.EventTextDelta{Content: fmt.Sprintf("line %02d\n", i)}})
+		m = updated.(*Model)
+	}
+
+	if !m.messageList.AtBottomHeight(m.currentMessageListHeight()) {
+		t.Fatalf("message list should stay at bottom during streaming, offset=%d", m.messageList.YOffset())
+	}
+	view := m.View().Content
+	if !strings.Contains(view, "line 19") {
+		t.Fatalf("view should show latest streamed content, got:\n%s", view)
+	}
+}
+
+func TestStreamingThinkingDeltaAutoScrollsMessageList(t *testing.T) {
+	m := NewModel(nil, "deepseek-chat", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
+	m = updated.(*Model)
+	updated, _ = m.Update(userSubmittedMsg{text: "hello"})
+	m = updated.(*Model)
+	updated, _ = m.Update(streamStartedMsg{events: closedEventStream(), cancel: func() {}})
+	m = updated.(*Model)
+
+	for i := 0; i < 20; i++ {
+		updated, _ = m.Update(streamEventMsg{event: llm.EventReasoningDelta{Text: fmt.Sprintf("step-%02d ", i)}})
+		m = updated.(*Model)
+	}
+
+	if !m.messageList.AtBottomHeight(m.currentMessageListHeight()) {
+		t.Fatalf("message list should stay at bottom during thinking, offset=%d", m.messageList.YOffset())
+	}
+	view := m.View().Content
+	if !strings.Contains(view, "Thinking") {
+		t.Fatalf("view should show thinking indicator, got:\n%s", view)
+	}
+	if strings.Contains(view, "step-19") {
+		t.Fatalf("view should hide thinking content, got:\n%s", view)
 	}
 }
 func TestMessageListMouseWheelScrolls(t *testing.T) {

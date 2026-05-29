@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strings"
+
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
@@ -11,17 +13,17 @@ func (m *Model) View() tea.View {
 		return tea.NewView("Loading...")
 	}
 
+	footer := m.renderFooter()
+	messageHeight := m.height - lipgloss.Height(footer)
+	if messageHeight < 0 {
+		messageHeight = 0
+	}
+
 	var sections []string
-	sections = append(sections, m.messageList.Render())
-	if activity := m.statusLine.RenderActivity(); activity != "" {
-		sections = append(sections, activity)
+	if messageHeight > 0 {
+		sections = append(sections, fixedHeight(m.messageList.RenderHeight(messageHeight), messageHeight))
 	}
-	sections = append(sections, m.renderStatusLine())
-	sections = append(sections, m.renderEditor())
-	if menu := m.renderSlashCommandMenu(); menu != "" {
-		sections = append(sections, menu)
-	}
-	sections = append(sections, m.renderHelpBar())
+	sections = append(sections, footer)
 
 	base := lipgloss.JoinVertical(lipgloss.Left, sections...)
 
@@ -33,4 +35,45 @@ func (m *Model) View() tea.View {
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
 	return v
+}
+
+func (m *Model) renderFooter() string {
+	var footerSections []string
+	footerSections = append(footerSections, m.renderStatusLine())
+	footerSections = append(footerSections, m.renderEditor())
+	if menu := m.renderSlashCommandMenu(); menu != "" {
+		footerSections = append(footerSections, menu)
+	}
+	footerSections = append(footerSections, m.renderHelpBar())
+
+	return lipgloss.JoinVertical(lipgloss.Left, footerSections...)
+}
+
+func (m *Model) currentMessageListHeight() int {
+	if m.height <= 0 {
+		return 0
+	}
+	footer := m.renderFooter()
+	messageHeight := m.height - lipgloss.Height(footer)
+	if messageHeight < 0 {
+		return 0
+	}
+	return messageHeight
+}
+
+func fixedHeight(content string, height int) string {
+	if height <= 0 {
+		return ""
+	}
+	if content == "" {
+		return strings.Join(make([]string, height), "\n")
+	}
+	lines := strings.Split(content, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	return strings.Join(lines, "\n")
 }

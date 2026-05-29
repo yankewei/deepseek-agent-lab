@@ -190,6 +190,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.eventStream = msg.events
 		m.cancelStream = msg.cancel
 		m.messageList.Add(Message{Type: MsgAssistant, Status: StatusPending})
+		m.scrollMessageListToBottom()
 		m.thinkingBuf = ""
 		m.pendingToolCalls = nil
 		m.finishReason = ""
@@ -202,19 +203,28 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case streamEventMsg:
 		switch e := msg.event.(type) {
 		case llm.EventTextDelta:
+			wasAtBottom := m.messageListAtBottom()
 			assistant := m.messageList.LastAssistant()
 			if assistant != nil {
 				assistant.Status = StatusStreaming
 				assistant.Content += e.Content
 			}
 			m.statusLine.SetMode(ModeStreaming)
+			if wasAtBottom {
+				m.scrollMessageListToBottom()
+			}
 		case llm.EventReasoningDelta:
+			wasAtBottom := m.messageListAtBottom()
 			m.thinkingBuf += e.Text
 			m.statusLine.SetThinking(m.thinkingBuf)
 			if thinking := m.messageList.Find(MsgThinking, StatusStreaming); thinking != nil {
 				thinking.Content = m.thinkingBuf
+				if wasAtBottom {
+					m.scrollMessageListToBottom()
+				}
 			} else {
 				m.messageList.Add(Message{Type: MsgThinking, Content: m.thinkingBuf, Status: StatusStreaming})
+				m.scrollMessageListToBottom()
 			}
 		case llm.EventToolCall:
 			m.pendingToolCalls = append(m.pendingToolCalls, llm.ToolCallDef{
