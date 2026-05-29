@@ -10,12 +10,16 @@ import (
 func TestListSkillsTool(t *testing.T) {
 	tool := NewListSkillsTool([]skills.Skill{
 		{
-			Name:        "write",
-			Title:       "Write",
-			Description: "Rewrite prose",
-			WhenToUse:   "rewrite, polish",
-			Path:        "/Users/test/.agents/skills/write/SKILL.md",
-			Content:     "# Write\n\nRules.",
+			Name:          "write",
+			Title:         "Write",
+			Description:   "Rewrite prose",
+			WhenToUse:     "rewrite, polish",
+			License:       "MIT",
+			Compatibility: "Any",
+			AllowedTools:  "Read Edit",
+			Metadata:      map[string]string{"version": "1.0"},
+			Path:          "/Users/test/.agents/skills/write/SKILL.md",
+			Content:       "# Write\n\nRules.",
 		},
 	})
 
@@ -32,6 +36,12 @@ func TestListSkillsTool(t *testing.T) {
 	}
 	if got[0].Path != "/Users/test/.agents/skills/write/SKILL.md" {
 		t.Fatalf("Path = %q", got[0].Path)
+	}
+	if got[0].License != "MIT" {
+		t.Fatalf("License = %q, want MIT", got[0].License)
+	}
+	if got[0].Metadata["version"] != "1.0" {
+		t.Fatalf("Metadata.version = %q, want 1.0", got[0].Metadata["version"])
 	}
 }
 

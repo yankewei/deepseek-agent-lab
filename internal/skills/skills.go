@@ -7,16 +7,42 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Skill is a local instruction package loaded from skill-name/SKILL.md.
 type Skill struct {
-	Name        string
-	Title       string
-	Description string
-	WhenToUse   string
-	Content     string
-	Path        string
+	Name          string
+	Title         string
+	Description   string
+	WhenToUse     string
+	License       string
+	Compatibility string
+	AllowedTools  string
+	Metadata      map[string]string
+	Content       string // lazy-loaded body (frontmatter stripped)
+	Path          string
+}
+
+// Body returns the markdown body of the skill, loading from disk on first call.
+// If Content is already populated (e.g. from a direct test construction), it is returned as-is.
+func (s *Skill) Body() (string, error) {
+	if s.Content != "" {
+		return s.Content, nil
+	}
+	data, err := os.ReadFile(s.Path)
+	if err != nil {
+		return "", err
+	}
+	_, body, err := splitFrontmatter(string(data))
+	if err != nil {
+		// Treat entire file as body if frontmatter parsing fails.
+		s.Content = string(data)
+		return s.Content, nil
+	}
+	s.Content = strings.TrimSpace(body)
+	return s.Content, nil
 }
 
 // Root points at a directory containing skill-name/SKILL.md entries.
@@ -42,8 +68,10 @@ func DefaultRoots(projectRoot, homeDir string, extraDirs []string) []Root {
 	return roots
 }
 
-// Load scans roots in order. Later roots override earlier roots with the same
-// skill directory name, so project-local skills can override user skills.
+// Load scans roots in order and loads only the frontmatter metadata from each
+// SKILL.md. The full markdown body is loaded lazily via Skill.Body() when the
+// skill is activated. Later roots override earlier roots with the same skill
+// directory name.
 func Load(roots []Root) ([]Skill, error) {
 	byName := make(map[string]Skill)
 	for _, root := range roots {
@@ -58,14 +86,17 @@ func Load(roots []Root) ([]Skill, error) {
 			if !entry.IsDir() {
 				continue
 			}
-			name := entry.Name()
-			path := filepath.Join(root.Path, name, "SKILL.md")
-			content, err := os.ReadFile(path)
+			dirName := entry.Name()
+			path := filepath.Join(root.Path, dirName, "SKILL.md")
+			data, err := os.ReadFile(path)
 			if err != nil {
 				continue
 			}
-			skill := parse(name, path, string(content))
-			byName[name] = skill
+			skill, err := parse(dirName, path, string(data))
+			if err != nil {
+				continue
+			}
+			byName[skill.Name] = skill
 		}
 	}
 
@@ -108,55 +139,128 @@ func Inject(base string, active []Skill) string {
 		if title == "" {
 			title = skill.Name
 		}
+		body, err := skill.Body()
+		if err != nil {
+			continue
+		}
 		b.WriteString(fmt.Sprintf("\n### %s\n", title))
 		b.WriteString(fmt.Sprintf("Skill directory: %s\n\n", filepath.Dir(skill.Path)))
-		b.WriteString(strings.TrimSpace(skill.Content))
+		b.WriteString(strings.TrimSpace(body))
 		b.WriteString("\n")
 	}
 	return b.String()
 }
 
-func parse(name, path, content string) Skill {
-	title := ""
-	description := ""
-	lines := strings.Split(content, "\n")
-	frontmatter := parseFrontmatter(lines)
-	if v := frontmatter["description"]; v != "" {
-		description = v
-	}
-	whenToUse := frontmatter["when_to_use"]
+type rawFrontmatter struct {
+	Name          string            `yaml:"name"`
+	Description   string            `yaml:"description"`
+	License       string            `yaml:"license"`
+	Compatibility string            `yaml:"compatibility"`
+	AllowedTools  string            `yaml:"allowed-tools"`
+	Metadata      map[string]string `yaml:"metadata"`
+	WhenToUse     string            `yaml:"when_to_use"`
+}
 
-	titleIndex := -1
-	for i, line := range lines {
+func parse(dirName, path, content string) (Skill, error) {
+	fmStr, body, err := splitFrontmatter(content)
+
+	var fm rawFrontmatter
+	if err == nil {
+		if uerr := yaml.Unmarshal([]byte(fmStr), &fm); uerr != nil {
+			// If YAML unmarshal fails, fall through with zero-valued fm.
+			fm = rawFrontmatter{}
+		}
+	}
+
+	name := fm.Name
+	if name == "" {
+		name = dirName
+	}
+	if verr := ValidateName(name, dirName); verr != nil {
+		return Skill{}, verr
+	}
+
+	title := extractTitle(body)
+	description := fm.Description
+	if description == "" {
+		description = extractFirstParagraph(body)
+	}
+
+	return Skill{
+		Name:          name,
+		Title:         title,
+		Description:   description,
+		WhenToUse:     fm.WhenToUse,
+		License:       fm.License,
+		Compatibility: fm.Compatibility,
+		AllowedTools:  fm.AllowedTools,
+		Metadata:      fm.Metadata,
+		Path:          path,
+	}, nil
+}
+
+// ValidateName checks that a skill name conforms to the agentskills.io spec.
+func ValidateName(name, dirName string) error {
+	if name == "" {
+		return fmt.Errorf("name is required")
+	}
+	if name != dirName {
+		return fmt.Errorf("name %q must match directory name %q", name, dirName)
+	}
+	if len(name) < 1 || len(name) > 64 {
+		return fmt.Errorf("name %q must be 1-64 characters", name)
+	}
+	for i, r := range name {
+		valid := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-'
+		if !valid {
+			return fmt.Errorf("name %q must only contain lowercase letters, digits, and hyphens", name)
+		}
+		if r == '-' {
+			if i == 0 || i == len(name)-1 {
+				return fmt.Errorf("name %q must not start or end with a hyphen", name)
+			}
+			if i > 0 && name[i-1] == '-' {
+				return fmt.Errorf("name %q must not contain consecutive hyphens", name)
+			}
+		}
+	}
+	return nil
+}
+
+func splitFrontmatter(content string) (string, string, error) {
+	lines := strings.Split(content, "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+		return "", content, fmt.Errorf("no frontmatter")
+	}
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "---" {
+			fm := strings.Join(lines[1:i], "\n")
+			body := strings.Join(lines[i+1:], "\n")
+			return fm, body, nil
+		}
+	}
+	return "", content, fmt.Errorf("unclosed frontmatter")
+}
+
+func extractTitle(body string) string {
+	for _, line := range strings.Split(body, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "# ") {
-			title = strings.TrimSpace(strings.TrimPrefix(trimmed, "# "))
-			titleIndex = i
-			break
+			return strings.TrimSpace(strings.TrimPrefix(trimmed, "# "))
 		}
 	}
-	start := 0
-	if titleIndex >= 0 {
-		start = titleIndex + 1
-	}
-	if description == "" {
-		for _, line := range lines[start:] {
-			trimmed := strings.TrimSpace(line)
-			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-				continue
-			}
-			description = trimmed
-			break
+	return ""
+}
+
+func extractFirstParagraph(body string) string {
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
 		}
+		return trimmed
 	}
-	return Skill{
-		Name:        name,
-		Title:       title,
-		Description: description,
-		WhenToUse:   whenToUse,
-		Content:     content,
-		Path:        path,
-	}
+	return ""
 }
 
 func matchesSkill(skill Skill, query string, queryTokens map[string]bool) bool {
@@ -175,28 +279,6 @@ func matchesSkill(skill Skill, query string, queryTokens map[string]bool) bool {
 		}
 	}
 	return false
-}
-
-func parseFrontmatter(lines []string) map[string]string {
-	out := make(map[string]string)
-	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
-		return out
-	}
-	for _, line := range lines[1:] {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "---" {
-			break
-		}
-		key, value, ok := strings.Cut(trimmed, ":")
-		if !ok {
-			continue
-		}
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
-		value = strings.Trim(value, `"'`)
-		out[key] = value
-	}
-	return out
 }
 
 func tokenSet(text string) map[string]bool {

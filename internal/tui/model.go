@@ -159,6 +159,9 @@ func (m *Model) submit(text string) tea.Cmd {
 	if strings.HasPrefix(text, "/") {
 		return m.handleSlashCommand(text)
 	}
+	if strings.HasPrefix(text, "skill:") {
+		return m.handleSkillCommand(text)
+	}
 	m.refreshSystemPrompt(text)
 	m.isRunning = true
 	m.messages = append(m.messages, llm.Message{Role: "user", Content: text})
@@ -195,6 +198,9 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		for _, cmd := range slashcmd.All() {
 			lines = append(lines, fmt.Sprintf("  %s — %s", cmd.Name, cmd.Description))
 		}
+		for _, skill := range m.skills {
+			lines = append(lines, fmt.Sprintf("  skill:%s — %s", skill.Name, skill.Description))
+		}
 		m.messageList.Add(Message{Type: MsgSystem, Content: strings.Join(lines, "\n"), Status: StatusDone})
 		m.editor.Reset()
 		return nil
@@ -207,9 +213,48 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 	}
 }
 
+// handleSkillCommand processes a skill: command by injecting the skill into the system prompt.
+func (m *Model) handleSkillCommand(text string) tea.Cmd {
+	parts := strings.SplitN(text, " ", 2)
+	skillName := strings.TrimPrefix(parts[0], "skill:")
+
+	var found *skills.Skill
+	for i := range m.skills {
+		if m.skills[i].Name == skillName {
+			found = &m.skills[i]
+			break
+		}
+	}
+
+	if found == nil {
+		m.messageList.Add(Message{Type: MsgError, Content: "未知 skill: " + skillName, Status: StatusError})
+		m.editor.Reset()
+		return nil
+	}
+
+	m.systemPrompt = skills.Inject(m.basePrompt, []skills.Skill{*found})
+
+	if len(parts) == 1 {
+		m.messageList.Add(Message{Type: MsgSystem, Content: fmt.Sprintf("已激活 skill: %s", found.Name), Status: StatusDone})
+		m.editor.Reset()
+		return nil
+	}
+
+	content := parts[1]
+	m.isRunning = true
+	m.messages = append(m.messages, llm.Message{Role: "user", Content: content})
+	m.messageList.Add(Message{Type: MsgUser, Content: content, Status: StatusDone})
+	m.recordRunLog(m.runLogger.AppendUserMessage(content))
+	m.recordRunLog(m.runLogger.AppendRunStatus("running"))
+	m.statusLine.SetMode(ModeStreaming)
+	m.editor.Reset()
+	m.turnCtx, m.cancelTurn = context.WithCancel(context.Background())
+	return m.startStreamCmd()
+}
+
 func (m *Model) matchedSlashCommands() []slashcmd.Command {
 	value := m.editor.Value()
-	if !strings.HasPrefix(value, "/") {
+	if !strings.HasPrefix(value, "/") && !strings.HasPrefix(value, "skill:") {
 		return nil
 	}
 	value = strings.ToLower(value)
@@ -219,17 +264,27 @@ func (m *Model) matchedSlashCommands() []slashcmd.Command {
 			matches = append(matches, cmd)
 		}
 	}
+	for _, skill := range m.skills {
+		cmd := slashcmd.Command{
+			Name:        "skill:" + skill.Name,
+			Description: skill.Description,
+		}
+		if strings.HasPrefix(value, "/") || strings.HasPrefix(strings.ToLower(cmd.Name), value) {
+			matches = append(matches, cmd)
+		}
+	}
 	return matches
 }
 
 func (m *Model) slashMenuActive() bool {
-	return strings.HasPrefix(m.editor.Value(), "/") && !m.slashHidden && len(m.matchedSlashCommands()) > 0
+	value := m.editor.Value()
+	return (strings.HasPrefix(value, "/") || strings.HasPrefix(value, "skill:")) && !m.slashHidden && len(m.matchedSlashCommands()) > 0
 }
 
 func (m *Model) syncSlashMenu() {
 	m.editor.ShowSuggestions = false
 	value := m.editor.Value()
-	if !strings.HasPrefix(value, "/") {
+	if !strings.HasPrefix(value, "/") && !strings.HasPrefix(value, "skill:") {
 		m.slashIndex = 0
 		m.slashHidden = false
 		m.slashValue = ""
@@ -282,11 +337,12 @@ func (m *Model) selectSlashCommand() {
 }
 
 func (m *Model) closeSlashMenu() {
-	if !strings.HasPrefix(m.editor.Value(), "/") {
+	value := m.editor.Value()
+	if !strings.HasPrefix(value, "/") && !strings.HasPrefix(value, "skill:") {
 		return
 	}
 	m.slashHidden = true
-	m.slashValue = m.editor.Value()
+	m.slashValue = value
 }
 
 func slashCommandLabel(cmd slashcmd.Command) string {
@@ -298,13 +354,32 @@ func (m *Model) renderSlashCommandMenu() string {
 		return ""
 	}
 	matches := m.matchedSlashCommands()
-	lines := make([]string, 0, len(matches))
+	total := len(matches)
+
+	const maxVisible = 8
+	startIdx := 0
+	if total > maxVisible {
+		if m.slashIndex >= maxVisible {
+			startIdx = m.slashIndex - maxVisible + 1
+		}
+		if startIdx+maxVisible > total {
+			startIdx = total - maxVisible
+		}
+	}
+	endIdx := startIdx + maxVisible
+	if endIdx > total {
+		endIdx = total
+	}
+
+	lines := make([]string, 0, endIdx-startIdx)
 	itemStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	selectedStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("0")).
 		Background(lipgloss.Color("6")).
 		Bold(true)
-	for i, cmd := range matches {
+	ellipsisStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	for i := startIdx; i < endIdx; i++ {
+		cmd := matches[i]
 		label := slashCommandLabel(cmd)
 		line := fmt.Sprintf("  %s  %s", label, cmd.Description)
 		if i == m.slashIndex {
@@ -313,6 +388,12 @@ func (m *Model) renderSlashCommandMenu() string {
 			line = itemStyle.Render(line)
 		}
 		lines = append(lines, line)
+	}
+	if startIdx > 0 {
+		lines = append([]string{ellipsisStyle.Render("  ...")}, lines...)
+	}
+	if endIdx < total {
+		lines = append(lines, ellipsisStyle.Render("  ..."))
 	}
 	return lipgloss.NewStyle().PaddingLeft(2).Render(strings.Join(lines, "\n"))
 }

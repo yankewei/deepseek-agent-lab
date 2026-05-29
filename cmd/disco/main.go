@@ -96,6 +96,17 @@ func main() {
 			}
 			runResume(cfg, cfg.RemainingArgs[1])
 			return
+		case "validate-skill":
+			if len(cfg.RemainingArgs) < 2 {
+				fmt.Fprintln(os.Stderr, "Usage: disco validate-skill <path>")
+				os.Exit(1)
+			}
+			if err := skills.ValidateSkill(cfg.RemainingArgs[1]); err != nil {
+				fmt.Fprintf(os.Stderr, "[VALIDATE_ERROR] %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Println("Skill is valid.")
+			return
 		}
 	}
 

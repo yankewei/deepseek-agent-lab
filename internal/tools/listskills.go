@@ -12,11 +12,15 @@ type listSkillsTool struct {
 }
 
 type listedSkill struct {
-	Name        string `json:"name"`
-	Title       string `json:"title,omitempty"`
-	Description string `json:"description,omitempty"`
-	WhenToUse   string `json:"whenToUse,omitempty"`
-	Path        string `json:"path"`
+	Name          string            `json:"name"`
+	Title         string            `json:"title,omitempty"`
+	Description   string            `json:"description,omitempty"`
+	WhenToUse     string            `json:"whenToUse,omitempty"`
+	License       string            `json:"license,omitempty"`
+	Compatibility string            `json:"compatibility,omitempty"`
+	AllowedTools  string            `json:"allowedTools,omitempty"`
+	Metadata      map[string]string `json:"metadata,omitempty"`
+	Path          string            `json:"path"`
 }
 
 func (t *listSkillsTool) Name() string   { return "listSkills" }
@@ -35,11 +39,15 @@ func (t *listSkillsTool) Execute(ctx context.Context, input json.RawMessage) (an
 	out := make([]listedSkill, 0, len(t.skills))
 	for _, skill := range t.skills {
 		out = append(out, listedSkill{
-			Name:        skill.Name,
-			Title:       skill.Title,
-			Description: skill.Description,
-			WhenToUse:   skill.WhenToUse,
-			Path:        skill.Path,
+			Name:          skill.Name,
+			Title:         skill.Title,
+			Description:   skill.Description,
+			WhenToUse:     skill.WhenToUse,
+			License:       skill.License,
+			Compatibility: skill.Compatibility,
+			AllowedTools:  skill.AllowedTools,
+			Metadata:      skill.Metadata,
+			Path:          skill.Path,
 		})
 	}
 	return out, nil

@@ -445,3 +445,99 @@ func sameStrings(a, b []string) bool {
 	}
 	return true
 }
+
+func TestSlashCommandMenuIncludesSkills(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	m.SetSkills([]skills.Skill{
+		{Name: "read", Title: "Read", Description: "Fetch URLs"},
+		{Name: "write", Title: "Write", Description: "Rewrite prose"},
+	})
+
+	// 输入 / 时，菜单同时包含固定命令和 skill 命令
+	m.editor.SetValue("/")
+	m.syncSlashMenu()
+	matches := m.matchedSlashCommands()
+	if len(matches) != 5 {
+		t.Fatalf("len(matches) = %d, want 5 (3 fixed + 2 skills)", len(matches))
+	}
+	menu := m.renderSlashCommandMenu()
+	for _, want := range []string{"clear", "help", "quit", "skill:read", "skill:write"} {
+		if !strings.Contains(menu, want) {
+			t.Fatalf("menu = %q, want it to contain %q", menu, want)
+		}
+	}
+	if !m.slashMenuActive() {
+		t.Fatal("slash menu should be active for /")
+	}
+
+	// 输入 skill: 时，只显示 skill 命令
+	m.editor.SetValue("skill:")
+	m.syncSlashMenu()
+	matches = m.matchedSlashCommands()
+	if len(matches) != 2 {
+		t.Fatalf("len(matches) = %d, want 2", len(matches))
+	}
+}
+
+func TestSlashCommandMenuFiltersSkillsByPrefix(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	m.SetSkills([]skills.Skill{
+		{Name: "read", Title: "Read", Description: "Fetch URLs"},
+		{Name: "write", Title: "Write", Description: "Rewrite prose"},
+	})
+	m.editor.SetValue("skill:r")
+	m.syncSlashMenu()
+
+	matches := m.matchedSlashCommands()
+	if len(matches) != 1 || matches[0].Name != "skill:read" {
+		t.Fatalf("matches = %+v, want only skill:read", matches)
+	}
+}
+
+func TestSkillCommandActivatesSkillWithoutMessage(t *testing.T) {
+	m := NewModel(nil, "", "base prompt", tools.NewRegistry(), execution.NewTracker(nil), "")
+	m.SetSkills([]skills.Skill{
+		{Name: "read", Title: "Read", Description: "Fetch URLs", Content: "# Read\n\nFetch any URL."},
+	})
+
+	_ = m.handleSkillCommand("skill:read")
+
+	if !strings.Contains(m.systemPrompt, "## Active Skills") {
+		t.Fatalf("system prompt = %q, want active skills", m.systemPrompt)
+	}
+	if !strings.Contains(m.systemPrompt, "# Read") {
+		t.Fatalf("system prompt = %q, want read skill", m.systemPrompt)
+	}
+	if len(m.messages) != 0 {
+		t.Fatalf("len(messages) = %d, want 0", len(m.messages))
+	}
+}
+
+func TestSkillCommandActivatesSkillWithMessage(t *testing.T) {
+	m := NewModel(nil, "", "base prompt", tools.NewRegistry(), execution.NewTracker(nil), "")
+	m.SetSkills([]skills.Skill{
+		{Name: "read", Title: "Read", Description: "Fetch URLs", Content: "# Read\n\nFetch any URL."},
+	})
+
+	_ = m.handleSkillCommand("skill:read hello world")
+
+	if !strings.Contains(m.systemPrompt, "# Read") {
+		t.Fatalf("system prompt = %q, want read skill", m.systemPrompt)
+	}
+	if len(m.messages) != 1 || m.messages[0].Content != "hello world" {
+		t.Fatalf("messages = %+v, want one user message with 'hello world'", m.messages)
+	}
+}
+
+func TestSkillCommandUnknownSkill(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	m.SetSkills([]skills.Skill{
+		{Name: "read", Title: "Read", Description: "Fetch URLs"},
+	})
+
+	_ = m.handleSkillCommand("skill:unknown")
+
+	if len(m.messages) != 0 {
+		t.Fatalf("len(messages) = %d, want 0", len(m.messages))
+	}
+}
