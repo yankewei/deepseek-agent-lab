@@ -20,7 +20,7 @@ type KeyMap struct {
 // DefaultKeyMap returns the default key bindings.
 func DefaultKeyMap() KeyMap {
 	return KeyMap{
-		Submit:      key.NewBinding(key.WithKeys("ctrl+enter"), key.WithHelp("ctrl+↵", "send")),
+		Submit:      key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "send")),
 		PageUp:      key.NewBinding(key.WithKeys("pgup"), key.WithHelp("pgup", "scroll up")),
 		PageDown:    key.NewBinding(key.WithKeys("pgdown"), key.WithHelp("pgdown", "scroll down")),
 		Quit:        key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit")),

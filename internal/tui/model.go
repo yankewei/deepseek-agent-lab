@@ -271,10 +271,10 @@ func (m *Model) matchedSlashCommands() []slashcmd.Command {
 	if !strings.HasPrefix(value, "/") && !strings.HasPrefix(value, "skill:") {
 		return nil
 	}
-	value = strings.ToLower(value)
+	lower := strings.ToLower(value)
 	var matches []slashcmd.Command
 	for _, cmd := range slashcmd.All() {
-		if strings.HasPrefix(strings.ToLower(cmd.Name), value) {
+		if strings.HasPrefix(strings.ToLower(cmd.Name), lower) {
 			matches = append(matches, cmd)
 		}
 	}
@@ -283,8 +283,15 @@ func (m *Model) matchedSlashCommands() []slashcmd.Command {
 			Name:        "skill:" + skill.Name,
 			Description: skill.Description,
 		}
-		if strings.HasPrefix(value, "/") || strings.HasPrefix(strings.ToLower(cmd.Name), value) {
-			matches = append(matches, cmd)
+		if strings.HasPrefix(lower, "skill:") {
+			if strings.HasPrefix(strings.ToLower(cmd.Name), lower) {
+				matches = append(matches, cmd)
+			}
+		} else if strings.HasPrefix(lower, "/") {
+			query := strings.TrimPrefix(lower, "/")
+			if strings.HasPrefix(strings.ToLower(skill.Name), query) {
+				matches = append(matches, cmd)
+			}
 		}
 	}
 	return matches

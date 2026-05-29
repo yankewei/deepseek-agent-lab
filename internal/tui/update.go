@@ -135,10 +135,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !m.isRunning && strings.TrimSpace(m.editor.Value()) == "" {
 				return m, tea.Quit
 			}
-		case "ctrl+enter":
-			text := strings.TrimSpace(m.editor.Value())
-			if text != "" && !m.isRunning {
-				cmds = append(cmds, m.submit(text))
+		case "enter":
+			if m.slashMenuActive() {
+				m.selectSlashCommand()
+			} else {
+				text := strings.TrimSpace(m.editor.Value())
+				if text != "" && !m.isRunning {
+					cmds = append(cmds, m.submit(text))
+				}
+			}
+		case "tab":
+			if m.slashMenuActive() {
+				m.selectSlashCommand()
 			}
 		case "up":
 			if m.slashMenuActive() {
@@ -147,10 +155,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "down":
 			if m.slashMenuActive() {
 				m.moveSlashSelection(1)
-			}
-		case "enter", "tab":
-			if m.slashMenuActive() {
-				m.selectSlashCommand()
 			}
 		case "esc":
 			m.closeSlashMenu()

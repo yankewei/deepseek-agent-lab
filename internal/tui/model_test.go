@@ -494,6 +494,35 @@ func TestSlashCommandMenuFiltersSkillsByPrefix(t *testing.T) {
 	}
 }
 
+func TestSlashCommandMenuFiltersSkillsBySlashQuery(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	m.SetSkills([]skills.Skill{
+		{Name: "read", Title: "Read", Description: "Fetch URLs"},
+		{Name: "write", Title: "Write", Description: "Rewrite prose"},
+	})
+
+	m.editor.SetValue("/read")
+	m.syncSlashMenu()
+	matches := m.matchedSlashCommands()
+	if len(matches) != 1 || matches[0].Name != "skill:read" {
+		t.Fatalf("matches = %+v, want only skill:read for /read", matches)
+	}
+
+	m.editor.SetValue("/r")
+	m.syncSlashMenu()
+	matches = m.matchedSlashCommands()
+	if len(matches) != 1 || matches[0].Name != "skill:read" {
+		t.Fatalf("matches = %+v, want only skill:read for /r", matches)
+	}
+
+	m.editor.SetValue("/w")
+	m.syncSlashMenu()
+	matches = m.matchedSlashCommands()
+	if len(matches) != 1 || matches[0].Name != "skill:write" {
+		t.Fatalf("matches = %+v, want only skill:write for /w", matches)
+	}
+}
+
 func TestSkillCommandActivatesSkillWithoutMessage(t *testing.T) {
 	m := NewModel(nil, "", "base prompt", tools.NewRegistry(), execution.NewTracker(nil), "")
 	m.SetSkills([]skills.Skill{
