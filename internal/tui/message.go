@@ -36,4 +36,10 @@ type Message struct {
 	Metadata  map[string]any
 	Status    MessageStatus
 	CreatedAt time.Time
+
+	// Render cache for assistant messages. Populated lazily by
+	// renderAssistant and invalidated when Content or width changes.
+	renderedWidth   int
+	renderedSrc     string
+	renderedContent string
 }

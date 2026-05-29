@@ -79,9 +79,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	if !skipMessageList {
-		ml, cmd := m.messageList.Update(msg)
-		m.messageList = ml.(*MessageList)
-		cmds = append(cmds, cmd)
+		// MessageList no longer wraps a viewport; scroll is handled
+		// directly via ScrollUp/ScrollDown below.
 	}
 
 	{
@@ -108,12 +107,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if width <= 0 {
 			width = boundedContentWidth(m.width)
 		}
+		if width < 20 {
+			width = 20
+		}
 		if r, err := glamour.NewTermRenderer(glamour.WithStylePath(style), glamour.WithWordWrap(width)); err == nil {
 			m.renderer = r
+			m.rendererStyle = style
 			m.messageList.SetRenderer(r)
-			m.messageList.refresh()
+			m.messageList.ClearRenderCache()
 		}
-
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c":
@@ -200,12 +202,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if assistant != nil {
 				assistant.Status = StatusStreaming
 				assistant.Content += e.Content
-				m.messageList.refresh()
 			}
 			m.statusLine.SetMode(ModeStreaming)
 		case llm.EventReasoningDelta:
 			m.thinkingBuf += e.Text
 			m.statusLine.SetThinking(m.thinkingBuf)
+			if thinking := m.messageList.Find(MsgThinking, StatusStreaming); thinking != nil {
+				thinking.Content = m.thinkingBuf
+			} else {
+				m.messageList.Add(Message{Type: MsgThinking, Content: m.thinkingBuf, Status: StatusStreaming})
+			}
 		case llm.EventToolCall:
 			m.pendingToolCalls = append(m.pendingToolCalls, llm.ToolCallDef{
 				ID:    e.ID,
@@ -225,21 +231,28 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				assistant.Metadata["usage_prompt"] = e.Usage.PromptTokens
 				assistant.Metadata["usage_completion"] = e.Usage.CompletionTokens
 				assistant.Metadata["usage_total"] = e.Usage.TotalTokens
-				m.messageList.refresh()
+			}
+			if thinking := m.messageList.Find(MsgThinking, StatusStreaming); thinking != nil {
+				thinking.Status = StatusDone
 			}
 			m.statusLine.SetMode(ModeIdle)
 			m.statusLine.ClearThinking()
 		case llm.EventError:
 			m.streamFailed = true
+			if thinking := m.messageList.Find(MsgThinking, StatusStreaming); thinking != nil {
+				thinking.Status = StatusDone
+			}
 			m.messageList.Add(Message{Type: MsgError, Content: e.Err.Error(), Status: StatusError})
 			m.statusLine.SetMode(ModeIdle)
 			m.statusLine.ClearThinking()
 			m.recordRunLog(m.runLogger.AppendRunStatus("failed"))
 		}
 		cmds = append(cmds, readNextEventCmd(m.eventStream))
-
 	case streamDoneMsg:
 		if m.streamFailed {
+			if thinking := m.messageList.Find(MsgThinking, StatusStreaming); thinking != nil {
+				thinking.Status = StatusDone
+			}
 			m.isRunning = false
 			m.statusLine.SetMode(ModeIdle)
 			m.cancelStream = nil
@@ -252,6 +265,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		assistant := m.messageList.LastAssistant()
 		if assistant != nil {
+			if thinking := m.messageList.Find(MsgThinking, StatusStreaming); thinking != nil {
+				thinking.Status = StatusDone
+			}
 			m.recordRunLog(m.runLogger.AppendModelReasoning(m.thinkingBuf))
 			m.recordRunLog(m.runLogger.AppendModelText(assistant.Content))
 			m.recordRunLog(m.runLogger.AppendModelStreamFinished(m.finishReason, m.finishUsage))
@@ -262,7 +278,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				ToolCalls:        m.pendingToolCalls,
 			}
 			m.messages = append(m.messages, llmMsg)
-
 			if len(llmMsg.ToolCalls) > 0 {
 				cmds = append(cmds, m.executeToolsCmd(llmMsg.ToolCalls))
 				m.statusLine.SetMode(ModeExecuting)
@@ -284,7 +299,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.thinkingBuf = ""
 		m.pendingToolCalls = nil
-
 	case toolResultsMsg:
 		for _, tr := range msg.results {
 			m.messages = append(m.messages, llm.Message{

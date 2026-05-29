@@ -1,21 +1,21 @@
 package tui
 
 import (
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"strings"
-	"testing"
-	"time"
-
-	tea "charm.land/bubbletea/v2"
-
 	"github.com/yankewei/ds-coding-agent/internal/execution"
 	"github.com/yankewei/ds-coding-agent/internal/llm"
 	"github.com/yankewei/ds-coding-agent/internal/runlog"
 	"github.com/yankewei/ds-coding-agent/internal/skills"
 	"github.com/yankewei/ds-coding-agent/internal/tools"
+	"image/color"
+	"os"
+	"strings"
+	"testing"
+	"time"
 )
 
 func TestCtrlCCancelsRunningTurn(t *testing.T) {
@@ -124,7 +124,7 @@ func TestMessageListScrollSurvivesUpdateLayout(t *testing.T) {
 		m.messageList.Add(Message{Type: MsgAssistant, Content: fmt.Sprintf("line %02d", i), Status: StatusDone})
 	}
 
-	bottom := m.messageList.viewport.YOffset()
+	bottom := m.messageList.YOffset()
 	if bottom == 0 {
 		t.Fatal("test setup should overflow the message list")
 	}
@@ -132,7 +132,7 @@ func TestMessageListScrollSurvivesUpdateLayout(t *testing.T) {
 	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyPgUp}))
 	m = updated.(*Model)
 
-	if got := m.messageList.viewport.YOffset(); got >= bottom {
+	if got := m.messageList.YOffset(); got >= bottom {
 		t.Fatalf("YOffset = %d, want less than bottom %d", got, bottom)
 	}
 }
@@ -539,5 +539,195 @@ func TestSkillCommandUnknownSkill(t *testing.T) {
 
 	if len(m.messages) != 0 {
 		t.Fatalf("len(messages) = %d, want 0", len(m.messages))
+	}
+}
+func TestModelRebuildsRendererOnWidthChange(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 20})
+	m = updated.(*Model)
+	oldRenderer := m.renderer
+	if oldRenderer == nil {
+		t.Fatal("expected renderer to be set after initial layout")
+	}
+	// Trigger a width change
+	updated, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
+	m = updated.(*Model)
+	if m.renderer == oldRenderer {
+		t.Fatal("expected renderer to be rebuilt on width change, got same pointer")
+	}
+}
+func TestModelBackgroundColorAppliesAutoTheme(t *testing.T) {
+	t.Setenv("GLAMOUR_STYLE", "")
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 20})
+	m = updated.(*Model)
+	oldRenderer := m.renderer
+	if oldRenderer == nil {
+		t.Fatal("expected renderer to be set after initial layout")
+	}
+	// Send BackgroundColorMsg with dark background
+	updated, _ = m.Update(tea.BackgroundColorMsg{Color: color.RGBA{0, 0, 0, 255}})
+	m = updated.(*Model)
+	if m.renderer == oldRenderer {
+		t.Fatal("expected renderer to change after BackgroundColorMsg")
+	}
+	if m.rendererStyle != "dark" {
+		t.Fatalf("expected rendererStyle to be dark, got %s", m.rendererStyle)
+	}
+}
+func TestModelBackgroundColorRespectsGlamourStyleOverride(t *testing.T) {
+	t.Setenv("GLAMOUR_STYLE", "dracula")
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 20})
+	m = updated.(*Model)
+	oldRenderer := m.renderer
+	if oldRenderer == nil {
+		t.Fatal("expected renderer to be set after initial layout")
+	}
+	// BackgroundColorMsg should be ignored when GLAMOUR_STYLE is set
+	updated, _ = m.Update(tea.BackgroundColorMsg{Color: color.RGBA{0, 0, 0, 255}})
+	m = updated.(*Model)
+	if m.renderer != oldRenderer {
+		t.Fatal("expected renderer to stay unchanged when GLAMOUR_STYLE is set")
+	}
+}
+func TestCursorColorIsBlack(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	r, g, b, _ := m.editor.Styles().Cursor.Color.RGBA()
+	if r != 0 || g != 0 || b != 0 {
+		t.Fatalf("cursor color not black, got RGBA(%d, %d, %d)", r, g, b)
+	}
+}
+func TestRenderEditorHasBorder(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 20})
+	m = updated.(*Model)
+	raw := m.editor.View()
+	bordered := m.renderEditor()
+	if lipgloss.Height(bordered) <= lipgloss.Height(raw) {
+		t.Fatalf("bordered editor height %d should be greater than raw editor height %d", lipgloss.Height(bordered), lipgloss.Height(raw))
+	}
+	// Check for at least one rounded-border corner character.
+	if !strings.Contains(bordered, "╭") {
+		t.Fatalf("renderEditor output should contain rounded border corner, got:\n%s", bordered)
+	}
+}
+func TestUpdateLayoutAccountsForBorderedInput(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 20})
+	m = updated.(*Model)
+	editorHeight := lipgloss.Height(m.renderEditor())
+	menuHeight := lipgloss.Height(m.renderSlashCommandMenu())
+	expectedListHeight := 20 - 1 - editorHeight - menuHeight
+	if expectedListHeight < 5 {
+		expectedListHeight = 5
+	}
+	if m.messageList.height != expectedListHeight {
+		t.Fatalf("message list height = %d, want %d", m.messageList.height, expectedListHeight)
+	}
+	innerWidth := m.contentWidth - inputBoxStyle.GetHorizontalFrameSize()
+	if innerWidth < 1 {
+		innerWidth = 1
+	}
+	if m.editor.Width() != innerWidth {
+		t.Fatalf("editor width = %d, want %d (inner width after border frame)", m.editor.Width(), innerWidth)
+	}
+}
+func TestViewRequestsMouseModeCellMotion(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 20})
+	m = updated.(*Model)
+	v := m.View()
+	if v.MouseMode != tea.MouseModeCellMotion {
+		t.Fatalf("MouseMode = %v, want MouseModeCellMotion", v.MouseMode)
+	}
+}
+func TestMessageListMouseWheelScrolls(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 8})
+	m = updated.(*Model)
+	for i := 0; i < 20; i++ {
+		m.messageList.Add(Message{Type: MsgAssistant, Content: fmt.Sprintf("line %02d", i), Status: StatusDone})
+	}
+	bottom := m.messageList.YOffset()
+	if bottom == 0 {
+		t.Fatal("test setup should overflow the message list")
+	}
+	updated, _ = m.Update(tea.MouseWheelMsg(tea.Mouse{Button: tea.MouseWheelUp}))
+	m = updated.(*Model)
+	if got := m.messageList.YOffset(); got >= bottom {
+		t.Fatalf("YOffset = %d, want less than bottom %d after wheel-up", got, bottom)
+	}
+}
+func TestModelReasoningDeltaCreatesThinkingRow(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(userSubmittedMsg{text: "hello"})
+	m = updated.(*Model)
+	updated, _ = m.Update(streamStartedMsg{events: closedEventStream(), cancel: func() {}})
+	m = updated.(*Model)
+	updated, _ = m.Update(streamEventMsg{event: llm.EventReasoningDelta{Text: "step one"}})
+	m = updated.(*Model)
+	msgs := m.messageList.Messages()
+	var thinkingMsgs []Message
+	for _, msg := range msgs {
+		if msg.Type == MsgThinking {
+			thinkingMsgs = append(thinkingMsgs, msg)
+		}
+	}
+	if len(thinkingMsgs) != 1 {
+		t.Fatalf("expected 1 thinking message, got %d", len(thinkingMsgs))
+	}
+	if thinkingMsgs[0].Content != "step one" {
+		t.Fatalf("expected thinking content 'step one', got %q", thinkingMsgs[0].Content)
+	}
+	if thinkingMsgs[0].Status != StatusStreaming {
+		t.Fatalf("expected thinking status streaming, got %v", thinkingMsgs[0].Status)
+	}
+	updated, _ = m.Update(streamEventMsg{event: llm.EventReasoningDelta{Text: " step two"}})
+	m = updated.(*Model)
+	msgs = m.messageList.Messages()
+	thinkingMsgs = nil
+	for _, msg := range msgs {
+		if msg.Type == MsgThinking {
+			thinkingMsgs = append(thinkingMsgs, msg)
+		}
+	}
+	if len(thinkingMsgs) != 1 {
+		t.Fatalf("expected 1 thinking message after update, got %d", len(thinkingMsgs))
+	}
+	if thinkingMsgs[0].Content != "step one step two" {
+		t.Fatalf("expected thinking content 'step one step two', got %q", thinkingMsgs[0].Content)
+	}
+	updated, _ = m.Update(streamEventMsg{event: llm.EventFinish{FinishReason: "stop"}})
+	m = updated.(*Model)
+	thinking := m.messageList.Find(MsgThinking, StatusDone)
+	if thinking == nil {
+		t.Fatal("expected thinking message to be marked done after finish")
+	}
+}
+func TestResumeCreatesThinkingRowFromReasoningContent(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	m.ResumeFrom(&runlog.Snapshot{
+		Messages: []llm.Message{
+			{Role: "user", Content: "hello"},
+			{Role: "assistant", Content: "hi", ReasoningContent: "let me think"},
+		},
+		NextAction: runlog.ActionReadyForNextStep,
+	})
+	msgs := m.messageList.Messages()
+	var foundThinking bool
+	for _, msg := range msgs {
+		if msg.Type == MsgThinking {
+			foundThinking = true
+			if msg.Content != "let me think" {
+				t.Fatalf("expected thinking content 'let me think', got %q", msg.Content)
+			}
+			if msg.Status != StatusDone {
+				t.Fatalf("expected thinking status done, got %v", msg.Status)
+			}
+		}
+	}
+	if !foundThinking {
+		t.Fatal("expected a thinking message after resume")
 	}
 }

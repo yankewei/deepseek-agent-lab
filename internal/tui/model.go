@@ -22,6 +22,14 @@ import (
 	"github.com/yankewei/ds-coding-agent/internal/tui/slashcmd"
 )
 
+var (
+	// inputBoxStyle wraps the text input with a visible border.
+	inputBoxStyle = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("8")).
+		Padding(0, 1)
+)
+
 // Model is the Bubble Tea model for the agent TUI.
 type Model struct {
 	width, height int
@@ -48,7 +56,8 @@ type Model struct {
 	toolDefs     []llm.ToolDefinition
 
 	// Markdown renderer for assistant messages.
-	renderer *glamour.TermRenderer
+	renderer      *glamour.TermRenderer
+	rendererStyle string
 
 	// Conversation state
 	messages         []llm.Message
@@ -88,10 +97,10 @@ func NewModelWithLogger(client *openai.Client, modelName, systemPrompt string, r
 	ti.Placeholder = ""
 	ti.Focus()
 	ti.SetWidth(80)
-
 	// Style the input so text is clearly visible.
 	styles := textinput.DefaultStyles(true)
 	styles.Focused.Prompt = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+	styles.Cursor.Color = lipgloss.Color("0")
 	ti.SetStyles(styles)
 
 	var toolDefs []llm.ToolDefinition
@@ -102,12 +111,16 @@ func NewModelWithLogger(client *openai.Client, modelName, systemPrompt string, r
 			Schema:      t.Schema(),
 		})
 	}
-
-	renderer := newMarkdownRenderer(80)
-
+	style := os.Getenv("GLAMOUR_STYLE")
+	if style == "" {
+		style = "notty"
+	}
+	renderer := newMarkdownRenderer(80, style)
+	ml := NewMessageList()
+	ml.SetRenderer(renderer)
 	return &Model{
 		editor:         ti,
-		messageList:    NewMessageList(),
+		messageList:    ml,
 		statusLine:     NewStatusLine(),
 		keys:           DefaultKeyMap(),
 		client:         client,
@@ -120,6 +133,7 @@ func NewModelWithLogger(client *openai.Client, modelName, systemPrompt string, r
 		runLogger:      logger,
 		toolDefs:       toolDefs,
 		renderer:       renderer,
+		rendererStyle:  style,
 		toolCallInputs: make(map[string]string),
 		initialPrompt:  initialPrompt,
 	}
@@ -458,23 +472,23 @@ func (m *Model) executeToolsCmd(calls []llm.ToolCallDef) tea.Cmd {
 func (m *Model) updateLayout() {
 	previousContentWidth := m.contentWidth
 	m.contentWidth = boundedContentWidth(m.width)
-
+	innerWidth := m.contentWidth - inputBoxStyle.GetHorizontalFrameSize()
+	if innerWidth < 1 {
+		innerWidth = 1
+	}
+	m.editor.SetWidth(innerWidth)
 	helpBarHeight := 1
-	editorHeight := lipgloss.Height(m.editor.View())
+	editorHeight := lipgloss.Height(m.renderEditor())
 	menuHeight := lipgloss.Height(m.renderSlashCommandMenu())
-
 	statusHeight := 0
 	if !m.statusLine.IsIdle() {
 		statusHeight = 1
 	}
-
 	messageListHeight := m.height - helpBarHeight - editorHeight - menuHeight - statusHeight
 	if messageListHeight < 5 {
 		messageListHeight = 5
 	}
-
 	m.messageList.SetSize(m.contentWidth, messageListHeight)
-	m.editor.SetWidth(m.contentWidth)
 	if m.contentWidth != previousContentWidth || m.renderer == nil {
 		m.rebuildRenderer()
 	}
@@ -505,17 +519,20 @@ func (m *Model) rebuildRenderer() {
 	if m.contentWidth <= 0 {
 		return
 	}
-	renderer := newMarkdownRenderer(m.contentWidth)
+	style := os.Getenv("GLAMOUR_STYLE")
+	if style == "" {
+		style = m.rendererStyle
+	}
+	renderer := newMarkdownRenderer(m.contentWidth, style)
 	if renderer == nil {
 		return
 	}
 	m.renderer = renderer
+	m.rendererStyle = style
 	m.messageList.SetRenderer(renderer)
-	m.messageList.refresh()
+	m.messageList.ClearRenderCache()
 }
-
-func newMarkdownRenderer(width int) *glamour.TermRenderer {
-	style := os.Getenv("GLAMOUR_STYLE")
+func newMarkdownRenderer(width int, style string) *glamour.TermRenderer {
 	if style == "" {
 		style = "notty"
 	}
@@ -551,6 +568,13 @@ func (m *Model) ResumeFrom(snapshot *runlog.Snapshot) {
 					"reasoning": msg.ReasoningContent,
 				},
 			})
+			if msg.ReasoningContent != "" {
+				m.messageList.Add(Message{
+					Type:    MsgThinking,
+					Content: msg.ReasoningContent,
+					Status:  StatusDone,
+				})
+			}
 			for _, tc := range msg.ToolCalls {
 				m.toolCallInputs[tc.ID] = string(tc.Input)
 				m.messageList.Add(Message{
@@ -621,7 +645,15 @@ func boundedContentWidth(terminalWidth int) int {
 	return width
 }
 
-// renderHelpBar returns a one-line help bar showing available keys.
+// renderEditor returns the editor wrapped in a visible border.
+func (m *Model) renderEditor() string {
+	width := m.contentWidth
+	if width <= 0 {
+		width = boundedContentWidth(m.width)
+	}
+	return inputBoxStyle.Width(width).Render(m.editor.View())
+}
+
 func (m *Model) renderHelpBar() string {
 	bindings := m.keys.ShortHelp()
 	var parts []string

@@ -18,7 +18,7 @@ func (m *Model) View() tea.View {
 		sections = append(sections, m.statusLine.Render())
 	}
 
-	sections = append(sections, m.editor.View())
+	sections = append(sections, m.renderEditor())
 	if menu := m.renderSlashCommandMenu(); menu != "" {
 		sections = append(sections, menu)
 	}
@@ -32,5 +32,6 @@ func (m *Model) View() tea.View {
 
 	v := tea.NewView(base)
 	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
 	return v
 }
