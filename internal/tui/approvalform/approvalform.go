@@ -6,39 +6,24 @@ import (
 
 	"charm.land/huh/v2"
 	"github.com/yankewei/ds-coding-agent/internal/approval"
+	"github.com/yankewei/ds-coding-agent/internal/tui/selector"
 )
 
-// New creates a huh form for an approval request.
-// It returns the form and a pointer to the decision variable that will be
-// populated when the form is completed.
+// New creates a huh form for an approval request using the generic selector.
+// The decision is read via form.GetString("decision") after completion.
 func New(req approval.Request) (*huh.Form, *string) {
-	var decision string
-
-	opts := []huh.Option[string]{
-		huh.NewOption("Approve once", "approve_once"),
-		huh.NewOption("Deny", "deny"),
+	opts := []selector.Choice{
+		{Label: "Approve once", Value: "approve_once"},
+		{Label: "Deny", Value: "deny"},
 	}
 	if req.SuggestedPolicyAmendment != nil {
 		label := fmt.Sprintf("Always allow prefix: %s", req.SuggestedPolicyAmendment.Prefix)
-		opts = append([]huh.Option[string]{
-			huh.NewOption(label, "always_allow_command_prefix"),
+		opts = append([]selector.Choice{
+			{Label: label, Value: "always_allow_command_prefix"},
 		}, opts...)
 	}
 
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewNote().
-				Title("⚠️  Approval Required").
-				Description(formatDetails(req)),
-			huh.NewSelect[string]().
-				Key("decision").
-				Title("Choose action").
-				Options(opts...).
-				Value(&decision),
-		),
-	)
-
-	return form, &decision
+	return selector.NewForm("⚠️  Approval Required", formatDetails(req), "decision", opts), nil
 }
 
 func formatDetails(req approval.Request) string {

@@ -248,6 +248,42 @@ func eventTypes(events []map[string]any) []string {
 	return out
 }
 
+func TestAppendModelSwitched(t *testing.T) {
+	dir := t.TempDir()
+	logger, err := CreateRun(Options{
+		CWD:     "/tmp/demo",
+		RootDir: dir,
+		RunID:   "run_model",
+		Now:     fixedClock(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer logger.Close()
+
+	if err := logger.AppendModelSwitched("deepseek-chat"); err != nil {
+		t.Fatalf("AppendModelSwitched error: %v", err)
+	}
+
+	events := readLogEvents(t, logger.Path())
+	if len(events) != 2 {
+		t.Fatalf("len(events) = %d, want 2", len(events))
+	}
+	if events[1]["type"] != "model_switched" {
+		t.Fatalf("type = %v, want model_switched", events[1]["type"])
+	}
+	if events[1]["modelName"] != "deepseek-chat" {
+		t.Fatalf("modelName = %v, want deepseek-chat", events[1]["modelName"])
+	}
+}
+
+func TestAppendModelSwitchedNilLogger(t *testing.T) {
+	var l *Logger
+	if err := l.AppendModelSwitched("deepseek-chat"); err != nil {
+		t.Fatalf("nil logger should return nil error, got %v", err)
+	}
+}
+
 func sameStrings(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

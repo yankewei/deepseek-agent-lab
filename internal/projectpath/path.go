@@ -97,6 +97,25 @@ func IsBlockedPath(relativePath string) bool {
 	return false
 }
 
+// FindGitRoot walks up from dir to find the nearest directory containing a .git
+// entry. If none is found, it returns dir cleaned.
+func FindGitRoot(dir string) string {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		abs = filepath.Clean(dir)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(abs, ".git")); err == nil {
+			return abs
+		}
+		parent := filepath.Dir(abs)
+		if parent == abs {
+			return filepath.Clean(dir)
+		}
+		abs = parent
+	}
+}
+
 func pathEscapes(rel string) bool {
 	return rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }

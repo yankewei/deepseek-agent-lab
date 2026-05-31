@@ -175,7 +175,7 @@ func TestMessagesForRequestDoesNotDuplicateSystem(t *testing.T) {
 }
 
 func TestSubmitInjectsMatchingSkillIntoSystemPrompt(t *testing.T) {
-	m := NewModel(nil, "", "base prompt", tools.NewRegistry(), execution.NewTracker(nil), "")
+	m := NewModel(nil, "", "base prompt\n\n## AGENTS.md Instructions\n\nproject rules", tools.NewRegistry(), execution.NewTracker(nil), "")
 	m.SetSkills([]skills.Skill{
 		{Name: "write", Title: "Write", Description: "Rewrite prose", Content: "# Write\n\nUse concise prose."},
 	})
@@ -194,6 +194,9 @@ func TestSubmitInjectsMatchingSkillIntoSystemPrompt(t *testing.T) {
 	}
 	if !strings.Contains(got[0].Content, "# Write") {
 		t.Fatalf("system prompt = %q, want write skill", got[0].Content)
+	}
+	if !strings.Contains(got[0].Content, "project rules") {
+		t.Fatalf("system prompt = %q, want AGENTS.md instructions", got[0].Content)
 	}
 }
 
@@ -266,11 +269,11 @@ func TestSlashCommandMenuMatchesAndRendersCommands(t *testing.T) {
 	m.syncSlashMenu()
 
 	matches := m.matchedSlashCommands()
-	if len(matches) != 3 {
-		t.Fatalf("len(matches) = %d, want 3", len(matches))
+	if len(matches) != 4 {
+		t.Fatalf("len(matches) = %d, want 4", len(matches))
 	}
 	menu := m.renderSlashCommandMenu()
-	for _, want := range []string{"clear", "help", "quit"} {
+	for _, want := range []string{"clear", "help", "model", "quit"} {
 		if !strings.Contains(menu, want) {
 			t.Fatalf("menu = %q, want it to contain %q", menu, want)
 		}
@@ -328,8 +331,8 @@ func TestSlashCommandMenuNavigatesAndSelects(t *testing.T) {
 
 	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyUp}))
 	m = updated.(*Model)
-	if m.slashIndex != 2 {
-		t.Fatalf("slashIndex = %d, want 2", m.slashIndex)
+	if m.slashIndex != 3 {
+		t.Fatalf("slashIndex = %d, want 3", m.slashIndex)
 	}
 
 	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
@@ -457,11 +460,11 @@ func TestSlashCommandMenuIncludesSkills(t *testing.T) {
 	m.editor.SetValue("/")
 	m.syncSlashMenu()
 	matches := m.matchedSlashCommands()
-	if len(matches) != 5 {
-		t.Fatalf("len(matches) = %d, want 5 (3 fixed + 2 skills)", len(matches))
+	if len(matches) != 6 {
+		t.Fatalf("len(matches) = %d, want 6 (4 fixed + 2 skills)", len(matches))
 	}
 	menu := m.renderSlashCommandMenu()
-	for _, want := range []string{"clear", "help", "quit", "skill:read", "skill:write"} {
+	for _, want := range []string{"clear", "help", "model", "quit", "skill:read", "skill:write"} {
 		if !strings.Contains(menu, want) {
 			t.Fatalf("menu = %q, want it to contain %q", menu, want)
 		}
@@ -665,6 +668,15 @@ func TestStatusLineShowsModelName(t *testing.T) {
 		t.Fatalf("status line should not show ctx when no tokens, got:\n%s", rendered)
 	}
 }
+func TestStatusLineShowsEstimatedInitialContextTokens(t *testing.T) {
+	m := NewModel(nil, "deepseek-chat", "system prompt", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
+	m = updated.(*Model)
+	rendered := m.renderStatusLine()
+	if !strings.Contains(rendered, "ctx ~") {
+		t.Fatalf("status line should show estimated ctx before the first response, got:\n%s", rendered)
+	}
+}
 func TestStatusLineShowsContextTokens(t *testing.T) {
 	m := NewModel(nil, "deepseek-chat", "", tools.NewRegistry(), execution.NewTracker(nil), "")
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
@@ -674,8 +686,20 @@ func TestStatusLineShowsContextTokens(t *testing.T) {
 	if !strings.Contains(rendered, "deepseek-chat") {
 		t.Fatalf("status line should contain model name, got:\n%s", rendered)
 	}
-	if !strings.Contains(rendered, "ctx 1.2k / 1.0M (0.1%)") {
+	if !strings.Contains(rendered, "ctx 1.2k/1.0M (0.1%)") {
 		t.Fatalf("status line should show formatted ctx, got:\n%s", rendered)
+	}
+}
+func TestStatusLineReplacesEstimateWithExactUsage(t *testing.T) {
+	m := NewModel(nil, "deepseek-chat", "system prompt", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(streamEventMsg{event: llm.EventFinish{Usage: llm.Usage{PromptTokens: 1234}}})
+	m = updated.(*Model)
+	rendered := m.renderStatusLine()
+	if !strings.Contains(rendered, "ctx 1.2k/1.0M (0.1%)") {
+		t.Fatalf("status line should show exact ctx after usage arrives, got:\n%s", rendered)
+	}
+	if strings.Contains(rendered, "ctx ~") {
+		t.Fatalf("status line should remove the estimate marker after usage arrives, got:\n%s", rendered)
 	}
 }
 func TestStatusLineShowsContextTokensWithoutPercentForUnknownModel(t *testing.T) {
@@ -697,7 +721,7 @@ func TestStatusLineShowsTinyContextPercent(t *testing.T) {
 	m = updated.(*Model)
 	m.statusLine.SetContextTokens(1)
 	rendered := m.renderStatusLine()
-	if !strings.Contains(rendered, "ctx 1 / 1.0M (<0.1%)") {
+	if !strings.Contains(rendered, "ctx 1/1.0M (<0.1%)") {
 		t.Fatalf("status line should show tiny ctx percent, got:\n%s", rendered)
 	}
 }
@@ -753,13 +777,39 @@ func TestUpdateLayoutAccountsForBorderedInput(t *testing.T) {
 		t.Fatalf("editor width = %d, want %d (inner width after border frame)", m.editor.Width(), innerWidth)
 	}
 }
-func TestViewRequestsMouseModeCellMotion(t *testing.T) {
+func TestViewEnablesMouseModeByDefault(t *testing.T) {
 	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 20})
 	m = updated.(*Model)
 	v := m.View()
 	if v.MouseMode != tea.MouseModeCellMotion {
-		t.Fatalf("MouseMode = %v, want MouseModeCellMotion", v.MouseMode)
+		t.Fatalf("MouseMode = %v, want MouseModeCellMotion by default", v.MouseMode)
+	}
+}
+
+func TestViewDisablesMouseModeAfterToggle(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 20})
+	m = updated.(*Model)
+	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Mod: tea.ModCtrl, Code: 'm'}))
+	m = updated.(*Model)
+	v := m.View()
+	if v.MouseMode != tea.MouseModeNone {
+		t.Fatalf("MouseMode = %v, want MouseModeNone after toggle", v.MouseMode)
+	}
+}
+
+func TestViewReEnablesMouseModeAfterSecondToggle(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 20})
+	m = updated.(*Model)
+	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Mod: tea.ModCtrl, Code: 'm'}))
+	m = updated.(*Model)
+	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Mod: tea.ModCtrl, Code: 'm'}))
+	m = updated.(*Model)
+	v := m.View()
+	if v.MouseMode != tea.MouseModeCellMotion {
+		t.Fatalf("MouseMode = %v, want MouseModeCellMotion after second toggle", v.MouseMode)
 	}
 }
 func TestViewAnchorsStatusLineAndEditorAtBottom(t *testing.T) {
@@ -847,23 +897,6 @@ func TestStreamingThinkingDeltaAutoScrollsMessageList(t *testing.T) {
 		t.Fatalf("view should hide thinking content, got:\n%s", view)
 	}
 }
-func TestMessageListMouseWheelScrolls(t *testing.T) {
-	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
-	updated, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 8})
-	m = updated.(*Model)
-	for i := 0; i < 20; i++ {
-		m.messageList.Add(Message{Type: MsgAssistant, Content: fmt.Sprintf("line %02d", i), Status: StatusDone})
-	}
-	bottom := m.messageList.YOffset()
-	if bottom == 0 {
-		t.Fatal("test setup should overflow the message list")
-	}
-	updated, _ = m.Update(tea.MouseWheelMsg(tea.Mouse{Button: tea.MouseWheelUp}))
-	m = updated.(*Model)
-	if got := m.messageList.YOffset(); got >= bottom {
-		t.Fatalf("YOffset = %d, want less than bottom %d after wheel-up", got, bottom)
-	}
-}
 func TestModelReasoningDeltaCreatesThinkingRow(t *testing.T) {
 	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
 	updated, _ := m.Update(userSubmittedMsg{text: "hello"})
@@ -934,5 +967,39 @@ func TestResumeCreatesThinkingRowFromReasoningContent(t *testing.T) {
 	}
 	if !foundThinking {
 		t.Fatal("expected a thinking message after resume")
+	}
+}
+
+func TestMessageListMouseWheelScrolls(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 8})
+	m = updated.(*Model)
+	for i := 0; i < 20; i++ {
+		m.messageList.Add(Message{Type: MsgAssistant, Content: fmt.Sprintf("line %02d", i), Status: StatusDone})
+	}
+	bottom := m.messageList.YOffset()
+	if bottom == 0 {
+		t.Fatal("test setup should overflow the message list")
+	}
+	updated, _ = m.Update(tea.MouseWheelMsg(tea.Mouse{Button: tea.MouseWheelUp}))
+	m = updated.(*Model)
+	if got := m.messageList.YOffset(); got >= bottom {
+		t.Fatalf("YOffset = %d, want less than bottom %d after wheel-up", got, bottom)
+	}
+}
+
+func TestModelSlashCommandOpensSelector(t *testing.T) {
+	m := NewModel(nil, "deepseek-v4-flash", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
+
+	cmd := m.submit("/model")
+	if cmd == nil {
+		t.Fatal("submit /model should return a cmd")
+	}
+	if m.form == nil {
+		t.Fatal("form should be set after /model command")
+	}
+	if m.formKind != "model" {
+		t.Fatalf("formKind = %q, want \"model\"", m.formKind)
 	}
 }

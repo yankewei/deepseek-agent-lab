@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 
@@ -26,29 +27,43 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Check if the form is completed or aborted.
 		switch m.form.State {
 		case huh.StateCompleted:
-			decision := m.form.GetString("decision")
-			var result approval.Result
-			if m.approvalReq != nil && m.approvalReq.SuggestedPolicyAmendment != nil && decision == "always_allow_command_prefix" {
-				result = approval.Result{
-					Decision:        decision,
-					PolicyAmendment: m.approvalReq.SuggestedPolicyAmendment,
+			switch m.formKind {
+			case "approval":
+				decision := m.form.GetString("decision")
+				var result approval.Result
+				if m.approvalReq != nil && m.approvalReq.SuggestedPolicyAmendment != nil && decision == "always_allow_command_prefix" {
+					result = approval.Result{
+						Decision:        decision,
+						PolicyAmendment: m.approvalReq.SuggestedPolicyAmendment,
+					}
+				} else {
+					result = approval.Result{Decision: decision}
 				}
-			} else {
-				result = approval.Result{Decision: decision}
-			}
-			if m.approvalResCh != nil {
-				m.approvalResCh <- result
+				if m.approvalResCh != nil {
+					m.approvalResCh <- result
+				}
+			case "model":
+				modelName := m.form.GetString("model")
+				if modelName != "" {
+					m.modelName = modelName
+					m.statusLine.SetModelName(modelName)
+					m.refreshEstimatedContextTokens()
+					m.messageList.Add(Message{Type: MsgSystem, Content: fmt.Sprintf("已切换模型: %s", modelName), Status: StatusDone})
+					m.recordRunLog(m.runLogger.AppendModelSwitched(modelName))
+				}
 			}
 			m.form = nil
+			m.formKind = ""
 			m.approvalReq = nil
 			m.approvalResCh = nil
 			return m, cmd
 
 		case huh.StateAborted:
-			if m.approvalResCh != nil {
+			if m.formKind == "approval" && m.approvalResCh != nil {
 				m.approvalResCh <- approval.Result{Decision: "deny", Reason: "Aborted"}
 			}
 			m.form = nil
+			m.formKind = ""
 			m.approvalReq = nil
 			m.approvalResCh = nil
 			return m, cmd
@@ -158,6 +173,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "esc":
 			m.closeSlashMenu()
+		case "ctrl+m":
+			m.mouseEnabled = !m.mouseEnabled
 		case "pgup":
 			m.messageList.ScrollUp(3)
 		case "pgdown":
@@ -176,6 +193,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.approvalReq = &msg.req
 		m.approvalResCh = msg.responseCh
 		m.form, _ = approvalform.New(msg.req)
+		m.formKind = "approval"
 		cmds = append(cmds, m.form.Init())
 
 	case userSubmittedMsg:

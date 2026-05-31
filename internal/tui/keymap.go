@@ -15,6 +15,7 @@ type KeyMap struct {
 	Help        key.Binding
 	Regenerate  key.Binding
 	CopyMessage key.Binding
+	ToggleMouse key.Binding
 }
 
 // DefaultKeyMap returns the default key bindings.
@@ -29,6 +30,7 @@ func DefaultKeyMap() KeyMap {
 		Help:        key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 		Regenerate:  key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "regenerate")),
 		CopyMessage: key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "copy")),
+		ToggleMouse: key.NewBinding(key.WithKeys("ctrl+m"), key.WithHelp("ctrl+m", "mouse")),
 	}
 }
 
@@ -41,6 +43,6 @@ func (k KeyMap) ShortHelp() []key.Binding {
 func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Submit, k.PageUp, k.PageDown, k.Quit},
-		{k.Cancel, k.Search, k.Help, k.Regenerate, k.CopyMessage},
+		{k.Cancel, k.Search, k.Help, k.Regenerate, k.CopyMessage, k.ToggleMouse},
 	}
 }

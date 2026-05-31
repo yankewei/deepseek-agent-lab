@@ -19,6 +19,7 @@ import (
 	"github.com/yankewei/ds-coding-agent/internal/runlog"
 	"github.com/yankewei/ds-coding-agent/internal/skills"
 	"github.com/yankewei/ds-coding-agent/internal/tools"
+	"github.com/yankewei/ds-coding-agent/internal/tui/selector"
 	"github.com/yankewei/ds-coding-agent/internal/tui/slashcmd"
 )
 
@@ -86,9 +87,14 @@ type Model struct {
 	resumeSnapshot *runlog.Snapshot
 
 	// Pending approval state.
-	approvalReq   *approval.Request
+	approvalReq *approval.Request
+
+	// Mouse mode: on by default so mouse-wheel scrolling works.
+	// Toggled with ctrl+m to restore native terminal text selection.
+	mouseEnabled  bool
 	approvalResCh chan approval.Result
 	form          *huh.Form
+	formKind      string // "approval" or "model"
 }
 
 // NewModel creates a new TUI model.
@@ -126,7 +132,7 @@ func NewModelWithLogger(client *openai.Client, modelName, systemPrompt string, r
 	ml.SetRenderer(renderer)
 	sl := NewStatusLine()
 	sl.SetModelName(modelName)
-	return &Model{
+	m := &Model{
 		editor:         ti,
 		messageList:    ml,
 		statusLine:     sl,
@@ -144,7 +150,10 @@ func NewModelWithLogger(client *openai.Client, modelName, systemPrompt string, r
 		rendererStyle:  style,
 		toolCallInputs: make(map[string]string),
 		initialPrompt:  initialPrompt,
+		mouseEnabled:   true,
 	}
+	m.refreshEstimatedContextTokens()
+	return m
 }
 
 // SetSkills configures the skills available for automatic prompt injection.
@@ -211,6 +220,7 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		m.thinkingBuf = ""
 		m.pendingToolCalls = nil
 		m.statusLine.SetMode(ModeIdle)
+		m.refreshEstimatedContextTokens()
 		m.recordRunLog(m.runLogger.AppendConversationCleared())
 		m.messageList.Add(Message{Type: MsgSystem, Content: "对话已清除", Status: StatusDone})
 		m.editor.Reset()
@@ -227,6 +237,8 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		m.messageList.Add(Message{Type: MsgSystem, Content: strings.Join(lines, "\n"), Status: StatusDone})
 		m.editor.Reset()
 		return nil
+	case "/model":
+		return m.showModelSelector()
 	case "/quit":
 		return tea.Quit
 	default:
@@ -234,6 +246,19 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		m.editor.Reset()
 		return nil
 	}
+}
+
+// showModelSelector opens a form to choose the LLM model.
+func (m *Model) showModelSelector() tea.Cmd {
+	choices := []selector.Choice{
+		{Label: "deepseek-v4-flash", Value: "deepseek-v4-flash"},
+		{Label: "deepseek-v4-pro", Value: "deepseek-v4-pro"},
+		{Label: "deepseek-chat", Value: "deepseek-chat"},
+		{Label: "deepseek-reasoner", Value: "deepseek-reasoner"},
+	}
+	m.form = selector.NewForm("选择模型", "选择要使用的 DeepSeek 模型", "model", choices)
+	m.formKind = "model"
+	return m.form.Init()
 }
 
 // handleSkillCommand processes a skill: command by injecting the skill into the system prompt.
@@ -256,6 +281,7 @@ func (m *Model) handleSkillCommand(text string) tea.Cmd {
 	}
 
 	m.systemPrompt = skills.Inject(m.basePrompt, []skills.Skill{*found})
+	m.refreshEstimatedContextTokens()
 
 	if len(parts) == 1 {
 		m.messageList.Add(Message{Type: MsgSystem, Content: fmt.Sprintf("已激活 skill: %s", found.Name), Status: StatusDone})
@@ -437,6 +463,7 @@ func (m *Model) startStreamCmd() tea.Cmd {
 	}
 	messages := m.messagesForRequest()
 	toolDefs := append([]llm.ToolDefinition(nil), m.toolDefs...)
+	m.statusLine.SetEstimatedContextTokens(llm.EstimatePromptTokens(messages, toolDefs))
 	return func() tea.Msg {
 		events, err := llm.Stream(ctx, m.client, m.modelName, messages, toolDefs)
 		if err != nil {
@@ -462,6 +489,10 @@ func (m *Model) messagesForRequest() []llm.Message {
 
 func (m *Model) refreshSystemPrompt(text string) {
 	m.systemPrompt = skills.Inject(m.basePrompt, skills.Match(m.skills, text))
+}
+
+func (m *Model) refreshEstimatedContextTokens() {
+	m.statusLine.SetEstimatedContextTokens(llm.EstimatePromptTokens(m.messagesForRequest(), m.toolDefs))
 }
 
 // executeToolsCmd runs the given tool calls in parallel.
@@ -523,6 +554,7 @@ func (m *Model) SetPrompt(prompt approval.Prompt) {
 			Schema:      t.Schema(),
 		})
 	}
+	m.refreshEstimatedContextTokens()
 }
 
 func (m *Model) recordRunLog(err error) {
@@ -638,6 +670,7 @@ func (m *Model) ResumeFrom(snapshot *runlog.Snapshot) {
 			Status:  StatusDone,
 		})
 	}
+	m.refreshEstimatedContextTokens()
 }
 
 func lastUserMessage(messages []llm.Message) string {

@@ -26,6 +26,7 @@ type StatusLine struct {
 	thinkingContent string
 	modelName       string
 	promptTokens    int
+	tokensEstimated bool
 }
 
 // NewStatusLine creates a new status line with a default spinner.
@@ -116,6 +117,14 @@ func (s *StatusLine) SetModelName(name string) {
 // SetContextTokens sets the prompt token count for context usage display.
 func (s *StatusLine) SetContextTokens(tokens int) {
 	s.promptTokens = tokens
+	s.tokensEstimated = false
+}
+
+// SetEstimatedContextTokens sets an approximate prompt token count for display
+// before the API reports exact usage.
+func (s *StatusLine) SetEstimatedContextTokens(tokens int) {
+	s.promptTokens = tokens
+	s.tokensEstimated = tokens > 0
 }
 
 // IsIdle returns true when no status should be shown.
@@ -128,10 +137,14 @@ func (s *StatusLine) renderContextUsage() string {
 		return ""
 	}
 	window := contextWindowForModel(s.modelName)
-	if window <= 0 {
-		return "ctx " + formatTokens(s.promptTokens)
+	prefix := "ctx "
+	if s.tokensEstimated {
+		prefix += "~"
 	}
-	return fmt.Sprintf("ctx %s / %s (%s)", formatTokens(s.promptTokens), formatTokens(window), formatPercent(s.promptTokens, window))
+	if window <= 0 {
+		return prefix + formatTokens(s.promptTokens)
+	}
+	return fmt.Sprintf("%s%s/%s (%s)", prefix, formatTokens(s.promptTokens), formatTokens(window), formatPercent(s.promptTokens, window))
 }
 
 func contextWindowForModel(model string) int {

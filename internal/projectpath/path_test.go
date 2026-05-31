@@ -94,6 +94,32 @@ func TestResolveNewWritableSymlinkParentEscape(t *testing.T) {
 	}
 }
 
+func TestFindGitRoot(t *testing.T) {
+	parent := t.TempDir()
+	repo := filepath.Join(parent, "repo")
+	subdir := filepath.Join(repo, "internal", "tui")
+	if err := os.MkdirAll(subdir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".git"), []byte("gitdir: somewhere"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := FindGitRoot(subdir)
+	if got != repo {
+		t.Fatalf("FindGitRoot(%q) = %q, want %q", subdir, got, repo)
+	}
+}
+
+func TestFindGitRootFallback(t *testing.T) {
+	dir := t.TempDir()
+
+	got := FindGitRoot(dir)
+	if got != dir {
+		t.Fatalf("FindGitRoot(%q) = %q, want %q (fallback to input)", dir, got, dir)
+	}
+}
+
 func TestIsBlockedPath(t *testing.T) {
 	blocked := []string{".env", ".git/config", "node_modules/foo", "dist/main.js", "bun.lock"}
 	for _, p := range blocked {

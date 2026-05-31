@@ -94,6 +94,12 @@ type ModelStreamFinishedEvent struct {
 	Usage        llm.Usage `json:"usage,omitempty"`
 }
 
+type ModelSwitchedEvent struct {
+	Type      string `json:"type"`
+	Timestamp string `json:"timestamp"`
+	ModelName string `json:"modelName"`
+}
+
 type ToolCallEvent struct {
 	Type       string          `json:"type"`
 	Timestamp  string          `json:"timestamp"`
@@ -371,6 +377,17 @@ func (l *Logger) AppendModelStreamFinished(finishReason string, usage llm.Usage)
 		Timestamp:    l.timestamp(),
 		FinishReason: finishReason,
 		Usage:        usage,
+	})
+}
+
+func (l *Logger) AppendModelSwitched(modelName string) error {
+	if l == nil {
+		return nil
+	}
+	return l.Append(ModelSwitchedEvent{
+		Type:      "model_switched",
+		Timestamp: l.timestamp(),
+		ModelName: modelName,
 	})
 }
 

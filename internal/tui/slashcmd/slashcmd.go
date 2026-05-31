@@ -12,6 +12,7 @@ func All() []Command {
 	return []Command{
 		{Name: "/clear", Description: "清除当前对话"},
 		{Name: "/help", Description: "显示可用命令"},
+		{Name: "/model", Description: "切换模型"},
 		{Name: "/quit", Description: "退出应用"},
 	}
 }

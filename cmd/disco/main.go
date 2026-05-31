@@ -10,6 +10,7 @@ import (
 	"github.com/yankewei/ds-coding-agent/internal/approval"
 	"github.com/yankewei/ds-coding-agent/internal/config"
 	"github.com/yankewei/ds-coding-agent/internal/execution"
+	"github.com/yankewei/ds-coding-agent/internal/instructions"
 	"github.com/yankewei/ds-coding-agent/internal/llm"
 	"github.com/yankewei/ds-coding-agent/internal/projectpath"
 	"github.com/yankewei/ds-coding-agent/internal/runlog"
@@ -114,7 +115,7 @@ func main() {
 	initialPrompt := strings.Join(cfg.RemainingArgs, " ")
 
 	client := llm.NewClient(cfg.APIKey)
-	cfg.SystemPrompt = systemPrompt
+	cfg.SystemPrompt = loadSystemPrompt()
 	loadedSkills := loadSkills(cfg)
 	runLogger, err := runlog.CreateRun(runlog.Options{
 		CWD:        projectpath.GetRoot(),
@@ -170,7 +171,7 @@ func listRuns() {
 
 func runResume(cfg *config.Config, runID string) {
 	client := llm.NewClient(cfg.APIKey)
-	cfg.SystemPrompt = systemPrompt
+	cfg.SystemPrompt = loadSystemPrompt()
 	loadedSkills := loadSkills(cfg)
 
 	events, err := runlog.LoadRunLog("", projectpath.GetRoot(), runID)
@@ -240,6 +241,20 @@ func loadSkills(cfg *config.Config) []skills.Skill {
 		fmt.Fprintf(os.Stderr, "[skills] loaded %d skills\n", len(loaded))
 	}
 	return loaded
+}
+
+func loadSystemPrompt() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[agents] home dir: %v\n", err)
+		homeDir = ""
+	}
+	gitRoot := projectpath.FindGitRoot(projectpath.GetRoot())
+	loaded := instructions.Load(gitRoot, homeDir)
+	for _, warning := range loaded.Warnings {
+		fmt.Fprintf(os.Stderr, "[agents] %v\n", warning)
+	}
+	return instructions.Append(systemPrompt, loaded.Prompt)
 }
 
 func mustGetwd() string {
