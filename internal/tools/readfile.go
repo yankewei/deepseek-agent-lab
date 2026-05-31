@@ -24,24 +24,23 @@ func (t *readFileTool) Description() string {
 	return "Read a project file. Large files are truncated to 2000 lines or 50KB. Use offset/limit to read specific ranges."
 }
 func (t *readFileTool) Schema() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
+	return objectSchema(
+		map[string]any{
 			"path": map[string]any{
 				"type":        "string",
 				"description": "Relative path to the file",
 			},
 			"offset": map[string]any{
-				"type":        "number",
+				"type":        "integer",
 				"description": "Line number to start reading from (1-indexed)",
 			},
 			"limit": map[string]any{
-				"type":        "number",
+				"type":        "integer",
 				"description": "Maximum number of lines to read",
 			},
 		},
-		"required": []string{"path"},
-	}
+		"path",
+	)
 }
 
 func (t *readFileTool) Execute(ctx context.Context, input json.RawMessage) (any, error) {
@@ -50,7 +49,7 @@ func (t *readFileTool) Execute(ctx context.Context, input json.RawMessage) (any,
 		Offset int    `json:"offset"`
 		Limit  int    `json:"limit"`
 	}
-	if err := json.Unmarshal(input, &args); err != nil {
+	if err := decodeInput(input, &args); err != nil {
 		return nil, err
 	}
 

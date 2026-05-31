@@ -22,7 +22,7 @@ func (p *countingPrompt) Request(ctx context.Context, req approval.Request) (app
 
 func TestRunCommandRuntimePolicyPreApproval(t *testing.T) {
 	runtimePolicy := policy.NewRuntimePolicy()
-	runtimePolicy.AllowPrefix("pwd")
+	runtimePolicy.AllowCommand("pwd -P")
 
 	tool := NewRunCommandTool(execution.NewTracker(nil), &approval.NoOpPrompt{}, runtimePolicy)
 	input, err := json.Marshal(map[string]any{"command": "pwd -P"})
@@ -59,6 +59,9 @@ func TestRunCommandApprovalDecisions(t *testing.T) {
 		if result["skipped"] != true {
 			t.Fatalf("skipped = %v, want true", result["skipped"])
 		}
+		if result["reason"] != "no" {
+			t.Fatalf("reason = %v, want no", result["reason"])
+		}
 	})
 
 	t.Run("approve once runs command", func(t *testing.T) {
@@ -80,13 +83,13 @@ func TestRunCommandApprovalDecisions(t *testing.T) {
 		}
 	})
 
-	t.Run("always allow prefix skips later prompt", func(t *testing.T) {
+	t.Run("always allow exact command skips later prompt", func(t *testing.T) {
 		runtimePolicy := policy.NewRuntimePolicy()
 		prompt := &countingPrompt{result: approval.Result{
-			Decision: "always_allow_command_prefix",
+			Decision: approval.DecisionAlwaysAllowCommand,
 			PolicyAmendment: &approval.PolicyAmendment{
-				Type:   "allow-command-prefix",
-				Prefix: "pwd -P",
+				Type:    "allow-command",
+				Command: "pwd -P",
 			},
 		}}
 		tool := NewRunCommandTool(execution.NewTracker(nil), prompt, runtimePolicy)
@@ -108,6 +111,50 @@ func TestRunCommandApprovalDecisions(t *testing.T) {
 			t.Fatalf("approvalRequired = %v, want false", result["approvalRequired"])
 		}
 	})
+
+	t.Run("always allow does not cover different arguments", func(t *testing.T) {
+		runtimePolicy := policy.NewRuntimePolicy()
+		prompt := &countingPrompt{result: approval.Result{
+			Decision: approval.DecisionAlwaysAllowCommand,
+			PolicyAmendment: &approval.PolicyAmendment{
+				Type:    "allow-command",
+				Command: "pwd -P",
+			},
+		}}
+		tool := NewRunCommandTool(execution.NewTracker(nil), prompt, runtimePolicy)
+		if _, err := tool.Execute(context.Background(), mustCommandJSON(t, "pwd -P", "inspect cwd")); err != nil {
+			t.Fatalf("first command failed: %v", err)
+		}
+		prompt.result = approval.Result{Decision: approval.DecisionDeny}
+		if _, err := tool.Execute(context.Background(), mustCommandJSON(t, "pwd -L", "inspect logical cwd")); err != nil {
+			t.Fatalf("second command failed: %v", err)
+		}
+		if prompt.count != 2 {
+			t.Fatalf("prompt count = %d, want 2", prompt.count)
+		}
+	})
+}
+
+func TestRunCommandNonZeroExitIsFailure(t *testing.T) {
+	tracker := execution.NewTracker(nil)
+	prompt := &countingPrompt{result: approval.Result{Decision: approval.DecisionApproveOnce}}
+	tool := NewRunCommandTool(tracker, prompt, policy.NewRuntimePolicy())
+
+	_, err := tool.Execute(context.Background(), mustCommandJSON(t, "false", "verify failing command status"))
+	if err == nil {
+		t.Fatal("expected non-zero command to return an error")
+	}
+
+	records := tracker.ListRecords()
+	if len(records) != 1 {
+		t.Fatalf("len(records) = %d, want 1", len(records))
+	}
+	if records[0].Status != execution.StatusFailed {
+		t.Fatalf("status = %q, want failed", records[0].Status)
+	}
+	if records[0].ExitCode == nil || *records[0].ExitCode != 1 {
+		t.Fatalf("exitCode = %v, want 1", records[0].ExitCode)
+	}
 }
 
 func mustCommandJSON(t *testing.T, command, reason string) []byte {

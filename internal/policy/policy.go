@@ -38,34 +38,17 @@ var (
 	allowedCommands    = map[string]struct{}{
 		"pwd": {},
 		// bun
-		"bun test":          {},
-		"bun run build:bin": {},
-		"bun --version":     {},
+		"bun --version": {},
 		// npm
-		"npm test":      {},
-		"npm run build": {},
 		"npm --version": {},
 		// yarn
-		"yarn test":      {},
-		"yarn build":     {},
 		"yarn --version": {},
 		// pnpm
-		"pnpm test":      {},
-		"pnpm run build": {},
 		"pnpm --version": {},
 		// go
-		"go test":     {},
-		"go build":    {},
-		"go version":  {},
-		"go mod tidy": {},
+		"go version": {},
 		// cargo
-		"cargo test":      {},
-		"cargo build":     {},
 		"cargo --version": {},
-		// make
-		"make":       {},
-		"make test":  {},
-		"make build": {},
 	}
 )
 
@@ -87,7 +70,7 @@ func Evaluate(command string) Decision {
 
 	normalized := normalize(trimmed)
 	if _, ok := allowedCommands[normalized]; ok {
-		return Decision{Type: "allow", Code: CodeLowRiskCommandAllowed, Reason: "Known low-risk project command.", Command: normalized}
+		return Decision{Type: "allow", Code: CodeLowRiskCommandAllowed, Reason: "Known low-risk read-only command.", Command: normalized}
 	}
 
 	return Decision{
@@ -99,30 +82,26 @@ func Evaluate(command string) Decision {
 	}
 }
 
-// RuntimePolicy allows dynamic command prefix allowances during a session.
+// RuntimePolicy allows dynamic exact-command allowances during a session.
 type RuntimePolicy struct {
-	allowedPrefixes map[string]struct{}
+	allowedCommands map[string]struct{}
 }
 
 // NewRuntimePolicy creates a fresh runtime policy store.
 func NewRuntimePolicy() *RuntimePolicy {
-	return &RuntimePolicy{allowedPrefixes: make(map[string]struct{})}
+	return &RuntimePolicy{allowedCommands: make(map[string]struct{})}
 }
 
-// AllowPrefix permanently allows a command prefix for this session.
-func (r *RuntimePolicy) AllowPrefix(prefix string) {
-	r.allowedPrefixes[normalize(prefix)] = struct{}{}
+// AllowCommand permanently allows one exact command for this session.
+func (r *RuntimePolicy) AllowCommand(command string) {
+	r.allowedCommands[normalize(command)] = struct{}{}
 }
 
-// IsAllowed checks if a command matches a previously allowed prefix.
+// IsAllowed checks if a command exactly matches a previously allowed command.
 func (r *RuntimePolicy) IsAllowed(command string) bool {
 	normalized := normalize(command)
-	for prefix := range r.allowedPrefixes {
-		if normalized == prefix || strings.HasPrefix(normalized, prefix+" ") {
-			return true
-		}
-	}
-	return false
+	_, ok := r.allowedCommands[normalized]
+	return ok
 }
 
 func normalize(cmd string) string {
@@ -138,15 +117,8 @@ func hasShellOperator(cmd string) bool {
 	return false
 }
 
-// GetApprovablePrefix returns a suggested prefix for runtime policy approval.
-// It returns the first two space-separated tokens, or the full command if there is only one token.
-func GetApprovablePrefix(cmd string) string {
-	parts := strings.Fields(cmd)
-	if len(parts) >= 2 {
-		return parts[0] + " " + parts[1]
-	}
-	if len(parts) == 1 {
-		return parts[0]
-	}
-	return ""
+// GetApprovableCommand returns the normalized exact command that can be
+// approved for the current session.
+func GetApprovableCommand(cmd string) string {
+	return normalize(cmd)
 }

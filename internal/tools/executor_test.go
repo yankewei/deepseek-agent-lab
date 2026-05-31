@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -198,6 +199,44 @@ func TestExecutorPersistsApprovalEvents(t *testing.T) {
 	}
 	if events[2]["executionId"] == "" || events[3]["executionId"] == "" {
 		t.Fatal("approval events should include executionId")
+	}
+}
+
+func TestExecutorRejectsUnknownApprovalDecision(t *testing.T) {
+	dir := t.TempDir()
+	projectpath.Init(dir)
+	target := filepath.Join(dir, "delete-me.txt")
+	if err := os.WriteFile(target, []byte("keep"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	registry := NewRegistry()
+	registry.Register(NewApplyPatchTool())
+	executor := Executor{
+		Registry: registry,
+		Tracker:  execution.NewTracker(nil),
+		Prompt:   staticPrompt{result: approval.Result{Decision: "approve_everything"}},
+	}
+	patch := "*** Begin Patch\n*** Delete File: delete-me.txt\n*** End Patch"
+	input, _ := json.Marshal(map[string]any{"patch": patch})
+
+	results := executor.Execute(context.Background(), []Call{{ID: "call-1", Name: "applyPatch", Input: input}})
+	if len(results) != 1 || results[0].Err == nil {
+		t.Fatalf("expected rejected approval result, got: %+v", results)
+	}
+	if _, err := os.Stat(target); err != nil {
+		t.Fatalf("file should still exist: %v", err)
+	}
+}
+
+func TestErrorContentIsValidJSON(t *testing.T) {
+	content := errorContent(errors.New("bad \"quote\"\nline"))
+	var got map[string]any
+	if err := json.Unmarshal([]byte(content), &got); err != nil {
+		t.Fatalf("error content is invalid JSON: %v\n%s", err, content)
+	}
+	if got["error"] != "bad \"quote\"\nline" {
+		t.Fatalf("error = %q", got["error"])
 	}
 }
 

@@ -4,8 +4,10 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/yankewei/ds-coding-agent/internal/approval"
 	"github.com/yankewei/ds-coding-agent/internal/execution"
 	"github.com/yankewei/ds-coding-agent/internal/llm"
 	"github.com/yankewei/ds-coding-agent/internal/runlog"
@@ -1033,5 +1035,29 @@ func TestModelSelectorRendersAsModalOverConversation(t *testing.T) {
 	}
 	if !strings.Contains(view, "选择模型") {
 		t.Fatalf("modal view should contain selector title, got:\n%s", view)
+	}
+}
+
+func TestSetPromptPreservesRegisteredSkillMetadata(t *testing.T) {
+	tracker := execution.NewTracker(nil)
+	registry := tools.CreateRegistryWithLoggerAndSkills(tracker, &approval.NoOpPrompt{}, nil, []skills.Skill{{Name: "write"}})
+	m := NewModel(nil, "", "", registry, tracker, "")
+
+	m.SetPrompt(&approval.NoOpPrompt{})
+
+	tool := m.registry.Get("listSkills")
+	if tool == nil {
+		t.Fatal("listSkills should remain registered after SetPrompt")
+	}
+	out, err := tool.Execute(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"name":"write"`) {
+		t.Fatalf("listSkills output should preserve loaded skills, got: %s", data)
 	}
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 
 	"github.com/yankewei/ds-coding-agent/internal/approval"
 	"github.com/yankewei/ds-coding-agent/internal/execution"
@@ -26,10 +25,12 @@ func (t *runCommandTool) Effect() Effect {
 func (t *runCommandTool) Description() string {
 	return "Run a project command allowed by policy, asking for approval when required"
 }
+func (t *runCommandTool) SetApprovalPrompt(prompt approval.Prompt) {
+	t.prompt = prompt
+}
 func (t *runCommandTool) Schema() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
+	return objectSchema(
+		map[string]any{
 			"command": map[string]any{
 				"type":        "string",
 				"description": "Command to run",
@@ -39,8 +40,8 @@ func (t *runCommandTool) Schema() map[string]any {
 				"description": "Reason for running this command (required for approval)",
 			},
 		},
-		"required": []string{"command"},
-	}
+		"command",
+	)
 }
 
 func (t *runCommandTool) Execute(ctx context.Context, input json.RawMessage) (any, error) {
@@ -48,7 +49,7 @@ func (t *runCommandTool) Execute(ctx context.Context, input json.RawMessage) (an
 		Command string `json:"command"`
 		Reason  string `json:"reason"`
 	}
-	if err := json.Unmarshal(input, &args); err != nil {
+	if err := decodeInput(input, &args); err != nil {
 		return nil, err
 	}
 
@@ -82,8 +83,8 @@ func (t *runCommandTool) Execute(ctx context.Context, input json.RawMessage) (an
 		t.tracker.UpdateRecord(rec.ID, map[string]any{"status": execution.StatusWaitingApproval})
 
 		var amend *approval.PolicyAmendment
-		if prefix := policy.GetApprovablePrefix(args.Command); prefix != "" {
-			amend = &approval.PolicyAmendment{Type: "allow-command-prefix", Prefix: prefix}
+		if command := policy.GetApprovableCommand(args.Command); command != "" {
+			amend = &approval.PolicyAmendment{Type: "allow-command", Command: command}
 		}
 
 		req := approval.Request{
@@ -100,7 +101,11 @@ func (t *runCommandTool) Execute(ctx context.Context, input json.RawMessage) (an
 			id, _ := t.logger.AppendApprovalRequested(req, rec.ID)
 			approvalID = id
 		}
-		res, err := t.prompt.Request(ctx, req)
+		prompt := t.prompt
+		if prompt == nil {
+			prompt = &approval.NoOpPrompt{}
+		}
+		res, err := prompt.Request(ctx, req)
 		if err != nil {
 			t.tracker.UpdateRecord(rec.ID, map[string]any{"status": execution.StatusFailed, "error": err.Error()})
 			return nil, err
@@ -108,15 +113,23 @@ func (t *runCommandTool) Execute(ctx context.Context, input json.RawMessage) (an
 		if t.logger != nil {
 			_ = t.logger.AppendApprovalResolved(approvalID, res, rec.ID)
 		}
+		if err := approval.ValidateResult(req, res); err != nil {
+			t.tracker.UpdateRecord(rec.ID, map[string]any{"status": execution.StatusFailed, "error": err.Error()})
+			return nil, err
+		}
 
-		if res.Decision == "deny" {
-			t.tracker.UpdateRecord(rec.ID, map[string]any{"status": execution.StatusDenied, "error": res.Reason})
-			return map[string]any{"skipped": true, "approvalRequired": true}, nil
+		if res.Decision == approval.DecisionDeny {
+			reason := res.Reason
+			if reason == "" {
+				reason = "Denied by user."
+			}
+			t.tracker.UpdateRecord(rec.ID, map[string]any{"status": execution.StatusDenied, "error": reason})
+			return map[string]any{"skipped": true, "approvalRequired": true, "reason": reason}, nil
 		}
 
 		approved = true
-		if res.Decision == "always_allow_command_prefix" && res.PolicyAmendment != nil {
-			t.runtimePolicy.AllowPrefix(res.PolicyAmendment.Prefix)
+		if res.Decision == approval.DecisionAlwaysAllowCommand && res.PolicyAmendment != nil {
+			t.runtimePolicy.AllowCommand(res.PolicyAmendment.Command)
 		}
 	} else if preApproved {
 		approvalRequired = false
@@ -125,31 +138,32 @@ func (t *runCommandTool) Execute(ctx context.Context, input json.RawMessage) (an
 
 	t.tracker.UpdateRecord(rec.ID, map[string]any{"status": execution.StatusRunning})
 
-	parts := splitCommand(decision.Command)
-	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
-	out, err := cmd.CombinedOutput()
-	exitCode := 0
+	parts, err := splitCommand(decision.Command)
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode = exitErr.ExitCode()
-		} else {
-			t.tracker.UpdateRecord(rec.ID, map[string]any{"status": execution.StatusFailed, "error": err.Error()})
-			return nil, err
+		t.tracker.UpdateRecord(rec.ID, map[string]any{"status": execution.StatusFailed, "error": err.Error()})
+		return nil, err
+	}
+	result, err := runCapturedCommand(ctx, parts[0], parts[1:]...)
+	if err != nil {
+		t.tracker.UpdateRecord(rec.ID, map[string]any{"status": execution.StatusFailed, "exit_code": result.ExitCode, "error": err.Error()})
+		if result.ExitCode != 0 {
+			return nil, &commandExecutionError{result: result}
 		}
+		return nil, err
 	}
 
-	t.tracker.UpdateRecord(rec.ID, map[string]any{"status": execution.StatusCompleted, "exit_code": exitCode})
+	t.tracker.UpdateRecord(rec.ID, map[string]any{"status": execution.StatusCompleted, "exit_code": result.ExitCode})
 
 	return map[string]any{
-		"stdout":           string(out),
-		"stderr":           "",
-		"exitCode":         exitCode,
+		"stdout":           result.Stdout,
+		"stderr":           result.Stderr,
+		"exitCode":         result.ExitCode,
 		"approved":         approved,
 		"approvalRequired": approvalRequired,
 	}, nil
 }
 
-func splitCommand(cmd string) []string {
+func splitCommand(cmd string) ([]string, error) {
 	// Simple whitespace split; sufficient for our allowed command set.
 	var result []string
 	var current []rune
@@ -181,7 +195,13 @@ func splitCommand(cmd string) []string {
 	if len(current) > 0 {
 		result = append(result, string(current))
 	}
-	return result
+	if inQuote {
+		return nil, fmt.Errorf("command contains an unclosed quote")
+	}
+	if len(result) == 0 {
+		return nil, fmt.Errorf("command cannot be empty")
+	}
+	return result, nil
 }
 
 // NewRunCommandTool creates the runCommand tool.

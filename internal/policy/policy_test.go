@@ -10,11 +10,11 @@ func TestEvaluate(t *testing.T) {
 		wantCode CommandPolicyCode
 	}{
 		{"allow pwd", "pwd", "allow", CodeLowRiskCommandAllowed},
-		{"allow bun test", "bun test", "allow", CodeLowRiskCommandAllowed},
-		{"allow go test", "go test", "allow", CodeLowRiskCommandAllowed},
-		{"allow npm test", "npm test", "allow", CodeLowRiskCommandAllowed},
-		{"allow make test", "make test", "allow", CodeLowRiskCommandAllowed},
-		{"allow cargo build", "cargo build", "allow", CodeLowRiskCommandAllowed},
+		{"prompt bun test", "bun test", "prompt", CodeCommandRequiresApproval},
+		{"prompt go test", "go test", "prompt", CodeCommandRequiresApproval},
+		{"prompt npm test", "npm test", "prompt", CodeCommandRequiresApproval},
+		{"prompt make test", "make test", "prompt", CodeCommandRequiresApproval},
+		{"prompt cargo build", "cargo build", "prompt", CodeCommandRequiresApproval},
 		{"prompt bun install", "bun install", "prompt", CodeCommandRequiresApproval},
 		{"prompt bun add", "bun add react", "prompt", CodeCommandRequiresApproval},
 		{"prompt npm install", "npm install", "prompt", CodeCommandRequiresApproval},
@@ -41,50 +41,50 @@ func TestEvaluate(t *testing.T) {
 func TestRuntimePolicy(t *testing.T) {
 	rp := NewRuntimePolicy()
 	if rp.IsAllowed("bun add react") {
-		t.Error("should not be allowed before prefix is added")
+		t.Error("should not be allowed before command is added")
 	}
-	rp.AllowPrefix("bun add")
+	rp.AllowCommand("bun add react")
 	if !rp.IsAllowed("bun add react") {
-		t.Error("should be allowed after prefix is added")
+		t.Error("should allow the exact command")
 	}
-	if !rp.IsAllowed("bun add") {
-		t.Error("exact prefix should be allowed")
+	if rp.IsAllowed("bun add react-dom") {
+		t.Error("different arguments should not be allowed")
 	}
 	if rp.IsAllowed("bun install") {
-		t.Error("different prefix should not be allowed")
+		t.Error("different command should not be allowed")
 	}
 
 	// Cross-ecosystem runtime policy.
 	rp2 := NewRuntimePolicy()
-	rp2.AllowPrefix("go get")
+	rp2.AllowCommand("go get github.com/foo/bar")
 	if !rp2.IsAllowed("go get github.com/foo/bar") {
-		t.Error("go get prefix should be allowed")
+		t.Error("exact go get command should be allowed")
 	}
 	if rp2.IsAllowed("go mod download") {
-		t.Error("different go prefix should not be allowed")
+		t.Error("different go command should not be allowed")
 	}
 }
 
-func TestGetApprovablePrefix(t *testing.T) {
-	if got := GetApprovablePrefix("bun add react"); got != "bun add" {
-		t.Errorf("GetApprovablePrefix = %q, want bun add", got)
+func TestGetApprovableCommand(t *testing.T) {
+	if got := GetApprovableCommand("bun add react"); got != "bun add react" {
+		t.Errorf("GetApprovableCommand = %q, want bun add react", got)
 	}
-	if got := GetApprovablePrefix("bun install"); got != "bun install" {
-		t.Errorf("GetApprovablePrefix = %q, want bun install", got)
+	if got := GetApprovableCommand("bun install"); got != "bun install" {
+		t.Errorf("GetApprovableCommand = %q, want bun install", got)
 	}
-	if got := GetApprovablePrefix("go get github.com/foo/bar"); got != "go get" {
-		t.Errorf("GetApprovablePrefix = %q, want go get", got)
+	if got := GetApprovableCommand("go get github.com/foo/bar"); got != "go get github.com/foo/bar" {
+		t.Errorf("GetApprovableCommand = %q, want exact go get command", got)
 	}
-	if got := GetApprovablePrefix("npm install"); got != "npm install" {
-		t.Errorf("GetApprovablePrefix = %q, want npm install", got)
+	if got := GetApprovableCommand("npm install"); got != "npm install" {
+		t.Errorf("GetApprovableCommand = %q, want npm install", got)
 	}
-	if got := GetApprovablePrefix("pwd"); got != "pwd" {
-		t.Errorf("GetApprovablePrefix = %q, want pwd", got)
+	if got := GetApprovableCommand("pwd"); got != "pwd" {
+		t.Errorf("GetApprovableCommand = %q, want pwd", got)
 	}
-	if got := GetApprovablePrefix("rm -rf /"); got != "rm -rf" {
-		t.Errorf("GetApprovablePrefix = %q, want rm -rf", got)
+	if got := GetApprovableCommand("rm -rf /"); got != "rm -rf /" {
+		t.Errorf("GetApprovableCommand = %q, want exact rm command", got)
 	}
-	if got := GetApprovablePrefix(""); got != "" {
-		t.Errorf("GetApprovablePrefix = %q, want empty", got)
+	if got := GetApprovableCommand(""); got != "" {
+		t.Errorf("GetApprovableCommand = %q, want empty", got)
 	}
 }

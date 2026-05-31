@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"sort"
 
 	"github.com/yankewei/ds-coding-agent/internal/approval"
 )
@@ -38,6 +39,12 @@ type ApprovalAware interface {
 	ApprovalRequest(input json.RawMessage) (*approval.Request, bool, error)
 }
 
+// ApprovalPromptSetter can be implemented by tools that request approval
+// internally and need their prompt updated without rebuilding the registry.
+type ApprovalPromptSetter interface {
+	SetApprovalPrompt(prompt approval.Prompt)
+}
+
 // EffectOf returns a tool's declared effect. Unknown tools are treated as
 // write-capable so execution stays conservative.
 func EffectOf(t Tool) Effect {
@@ -62,6 +69,15 @@ func (r *Registry) Register(t Tool) {
 	r.tools[t.Name()] = t
 }
 
+// SetApprovalPrompt updates tools that request approval internally.
+func (r *Registry) SetApprovalPrompt(prompt approval.Prompt) {
+	for _, t := range r.tools {
+		if setter, ok := t.(ApprovalPromptSetter); ok {
+			setter.SetApprovalPrompt(prompt)
+		}
+	}
+}
+
 // Get returns a tool by name, or nil if not found.
 func (r *Registry) Get(name string) Tool {
 	return r.tools[name]
@@ -73,13 +89,16 @@ func (r *Registry) All() []Tool {
 	for _, t := range r.tools {
 		out = append(out, t)
 	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Name() < out[j].Name()
+	})
 	return out
 }
 
 // ToFunctionDefinitions converts the registry to go-openai FunctionDefinition slice.
 func (r *Registry) ToFunctionDefinitions() []map[string]any {
 	out := make([]map[string]any, 0, len(r.tools))
-	for _, t := range r.tools {
+	for _, t := range r.All() {
 		out = append(out, map[string]any{
 			"type": "function",
 			"function": map[string]any{

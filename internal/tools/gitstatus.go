@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 )
 
 type gitStatusTool struct{}
@@ -13,19 +12,18 @@ func (t *gitStatusTool) Name() string        { return "gitStatus" }
 func (t *gitStatusTool) Effect() Effect      { return EffectRead }
 func (t *gitStatusTool) Description() string { return "Show the current git working tree status" }
 func (t *gitStatusTool) Schema() map[string]any {
-	return map[string]any{
-		"type":       "object",
-		"properties": map[string]any{},
-	}
+	return objectSchema(map[string]any{})
 }
 
 func (t *gitStatusTool) Execute(ctx context.Context, input json.RawMessage) (any, error) {
-	cmd := exec.CommandContext(ctx, "git", "status", "--porcelain")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("git status failed: %w\n%s", err, string(out))
+	if err := decodeInput(input, &struct{}{}); err != nil {
+		return nil, err
 	}
-	return string(out), nil
+	result, err := runCapturedCommand(ctx, "git", "status", "--porcelain")
+	if err != nil {
+		return nil, fmt.Errorf("git status failed: %w\n%s", err, result.Stderr)
+	}
+	return result.Stdout, nil
 }
 
 func NewGitStatusTool() Tool { return &gitStatusTool{} }

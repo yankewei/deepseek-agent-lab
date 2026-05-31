@@ -57,7 +57,7 @@ Use applyPatch for multi-file changes, then run validation when appropriate.
 Use gitStatus after edits to inspect the working tree state.
 Use getDiff after gitStatus to inspect the actual changed files before summarizing.
 Use runCommand for command execution.
-runCommand can run a small allowlist of commands without approval, such as: pwd, selected test/build commands, and version checks.
+runCommand can run a small allowlist of read-only commands without approval, such as: pwd and version checks.
 runCommand asks for approval before all other non-blocked commands; include a clear reason.
 If a command is blocked (contains shell operators or is empty), explain what you were trying to learn and choose a safer command.
 

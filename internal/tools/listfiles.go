@@ -12,26 +12,27 @@ import (
 
 type listFilesTool struct{}
 
+const maxListEntries = 2000
+
 func (t *listFilesTool) Name() string        { return "listFiles" }
 func (t *listFilesTool) Effect() Effect      { return EffectRead }
 func (t *listFilesTool) Description() string { return "List files inside the current project" }
 func (t *listFilesTool) Schema() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
+	return objectSchema(
+		map[string]any{
 			"path": map[string]any{
 				"type":        "string",
 				"description": "Relative directory path to list (default: root)",
 			},
 		},
-	}
+	)
 }
 
 func (t *listFilesTool) Execute(ctx context.Context, input json.RawMessage) (any, error) {
 	var args struct {
 		Path string `json:"path"`
 	}
-	if err := json.Unmarshal(input, &args); err != nil {
+	if err := decodeInput(input, &args); err != nil {
 		return nil, err
 	}
 
@@ -65,7 +66,12 @@ func (t *listFilesTool) Execute(ctx context.Context, input json.RawMessage) (any
 	sort.Strings(dirs)
 	sort.Strings(files)
 
-	return append(dirs, files...), nil
+	listed := append(dirs, files...)
+	if len(listed) > maxListEntries {
+		remaining := len(listed) - maxListEntries
+		listed = append(listed[:maxListEntries], fmt.Sprintf("[... %d more entries]", remaining))
+	}
+	return listed, nil
 }
 
 func NewListFilesTool() Tool { return &listFilesTool{} }

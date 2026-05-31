@@ -17,9 +17,9 @@ func New(req approval.Request) (*huh.Form, *string) {
 		{Label: "Deny", Value: "deny"},
 	}
 	if req.SuggestedPolicyAmendment != nil {
-		label := fmt.Sprintf("Always allow prefix: %s", req.SuggestedPolicyAmendment.Prefix)
+		label := fmt.Sprintf("Always allow command: %s", req.SuggestedPolicyAmendment.Command)
 		opts = append([]selector.Choice{
-			{Label: label, Value: "always_allow_command_prefix"},
+			{Label: label, Value: approval.DecisionAlwaysAllowCommand},
 		}, opts...)
 	}
 

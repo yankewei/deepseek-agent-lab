@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/yankewei/ds-coding-agent/internal/approval"
@@ -21,9 +22,8 @@ func (t *applyPatchTool) Description() string {
 	return "Apply a safe multi-file patch inside the current project"
 }
 func (t *applyPatchTool) Schema() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
+	return objectSchema(
+		map[string]any{
 			"patch": map[string]any{
 				"type":        "string",
 				"description": "The patch content",
@@ -33,8 +33,8 @@ func (t *applyPatchTool) Schema() map[string]any {
 				"description": "Preview changes without writing",
 			},
 		},
-		"required": []string{"patch"},
-	}
+		"patch",
+	)
 }
 
 func (t *applyPatchTool) Execute(ctx context.Context, input json.RawMessage) (any, error) {
@@ -42,7 +42,7 @@ func (t *applyPatchTool) Execute(ctx context.Context, input json.RawMessage) (an
 		Patch  string `json:"patch"`
 		DryRun bool   `json:"dryRun"`
 	}
-	if err := json.Unmarshal(input, &args); err != nil {
+	if err := decodeInput(input, &args); err != nil {
 		return nil, err
 	}
 
@@ -51,49 +51,21 @@ func (t *applyPatchTool) Execute(ctx context.Context, input json.RawMessage) (an
 		return nil, err
 	}
 
-	changed := make([]string, 0, len(ops))
-	for _, op := range ops {
-		abs, rel, err := projectpath.Resolve(op.Path)
-		if err != nil {
-			return nil, err
-		}
-		if projectpath.IsBlockedPath(rel) {
-			return nil, fmt.Errorf("path is blocked: %s", rel)
-		}
-
-		changed = append(changed, rel)
-
-		if args.DryRun {
-			continue
-		}
-
-		switch op.Type {
-		case "add":
-			if err := os.WriteFile(abs, []byte(op.Content), 0644); err != nil {
-				return nil, err
-			}
-		case "delete":
-			if err := os.Remove(abs); err != nil {
-				return nil, err
-			}
-		case "update":
-			data, err := os.ReadFile(abs)
-			if err != nil {
-				return nil, err
-			}
-			content := string(data)
-			for _, hunk := range op.Hunks {
-				count := strings.Count(content, hunk.OldText)
-				if count == 0 {
-					return nil, fmt.Errorf("patch hunk not found in %s", rel)
+	prepared, changed, err := preparePatch(ops)
+	if err != nil {
+		return nil, err
+	}
+	if !args.DryRun {
+		for _, op := range prepared {
+			switch op.Type {
+			case "add", "update":
+				if err := os.WriteFile(op.AbsPath, []byte(op.Content), 0644); err != nil {
+					return nil, err
 				}
-				if count > 1 {
-					return nil, fmt.Errorf("patch hunk appears %d times in %s", count, rel)
+			case "delete":
+				if err := os.Remove(op.AbsPath); err != nil {
+					return nil, err
 				}
-				content = strings.Replace(content, hunk.OldText, hunk.NewText, 1)
-			}
-			if err := os.WriteFile(abs, []byte(content), 0644); err != nil {
-				return nil, err
 			}
 		}
 	}
@@ -104,12 +76,88 @@ func (t *applyPatchTool) Execute(ctx context.Context, input json.RawMessage) (an
 	}, nil
 }
 
+type preparedPatchOp struct {
+	Type    string
+	AbsPath string
+	Content string
+}
+
+func preparePatch(ops []patchOp) ([]preparedPatchOp, []string, error) {
+	prepared := make([]preparedPatchOp, 0, len(ops))
+	changed := make([]string, 0, len(ops))
+	seen := make(map[string]struct{}, len(ops))
+
+	for _, op := range ops {
+		resolve := projectpath.Resolve
+		if op.Type == "add" {
+			resolve = projectpath.ResolveNewWritable
+		}
+		abs, rel, err := resolve(op.Path)
+		if err != nil {
+			return nil, nil, err
+		}
+		if projectpath.IsBlockedPath(rel) {
+			return nil, nil, fmt.Errorf("path is blocked: %s", rel)
+		}
+		if _, ok := seen[rel]; ok {
+			return nil, nil, fmt.Errorf("patch contains multiple operations for %s", rel)
+		}
+		seen[rel] = struct{}{}
+		changed = append(changed, rel)
+
+		preparedOp := preparedPatchOp{Type: op.Type, AbsPath: abs}
+		switch op.Type {
+		case "add":
+			if _, err := os.Lstat(abs); err == nil {
+				return nil, nil, fmt.Errorf("add file already exists: %s", rel)
+			} else if !os.IsNotExist(err) {
+				return nil, nil, err
+			}
+			parent, err := os.Stat(filepath.Dir(abs))
+			if err != nil {
+				return nil, nil, err
+			}
+			if !parent.IsDir() {
+				return nil, nil, fmt.Errorf("parent path is not a directory: %s", filepath.Dir(rel))
+			}
+			preparedOp.Content = op.Content
+		case "delete":
+			info, err := os.Stat(abs)
+			if err != nil {
+				return nil, nil, err
+			}
+			if info.IsDir() {
+				return nil, nil, fmt.Errorf("delete path is not a file: %s", rel)
+			}
+		case "update":
+			data, err := os.ReadFile(abs)
+			if err != nil {
+				return nil, nil, err
+			}
+			content := string(data)
+			for _, hunk := range op.Hunks {
+				count := strings.Count(content, hunk.OldText)
+				if count == 0 {
+					return nil, nil, fmt.Errorf("patch hunk not found in %s", rel)
+				}
+				if count > 1 {
+					return nil, nil, fmt.Errorf("patch hunk appears %d times in %s", count, rel)
+				}
+				content = strings.Replace(content, hunk.OldText, hunk.NewText, 1)
+			}
+			preparedOp.Content = content
+		}
+		prepared = append(prepared, preparedOp)
+	}
+	return prepared, changed, nil
+}
+
 func (t *applyPatchTool) ApprovalRequest(input json.RawMessage) (*approval.Request, bool, error) {
 	var args struct {
 		Patch  string `json:"patch"`
 		DryRun bool   `json:"dryRun"`
 	}
-	if err := json.Unmarshal(input, &args); err != nil {
+	if err := decodeInput(input, &args); err != nil {
 		return nil, false, err
 	}
 	if args.DryRun {
@@ -117,6 +165,9 @@ func (t *applyPatchTool) ApprovalRequest(input json.RawMessage) (*approval.Reque
 	}
 	ops, err := parsePatch(args.Patch)
 	if err != nil {
+		return nil, false, err
+	}
+	if _, _, err := preparePatch(ops); err != nil {
 		return nil, false, err
 	}
 	var deleted []string

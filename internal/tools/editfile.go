@@ -16,9 +16,8 @@ func (t *editFileTool) Name() string        { return "editFile" }
 func (t *editFileTool) Effect() Effect      { return EffectWrite }
 func (t *editFileTool) Description() string { return "Replace one exact text block in one file" }
 func (t *editFileTool) Schema() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
+	return objectSchema(
+		map[string]any{
 			"path": map[string]any{
 				"type":        "string",
 				"description": "Relative path to the file",
@@ -32,8 +31,8 @@ func (t *editFileTool) Schema() map[string]any {
 				"description": "Replacement text",
 			},
 		},
-		"required": []string{"path", "oldText", "newText"},
-	}
+		"path", "oldText", "newText",
+	)
 }
 
 func (t *editFileTool) Execute(ctx context.Context, input json.RawMessage) (any, error) {
@@ -42,7 +41,7 @@ func (t *editFileTool) Execute(ctx context.Context, input json.RawMessage) (any,
 		OldText string `json:"oldText"`
 		NewText string `json:"newText"`
 	}
-	if err := json.Unmarshal(input, &args); err != nil {
+	if err := decodeInput(input, &args); err != nil {
 		return nil, err
 	}
 

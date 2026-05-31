@@ -30,13 +30,19 @@ type Request struct {
 
 // PolicyAmendment suggests a runtime policy change.
 type PolicyAmendment struct {
-	Type   string `json:"type"`
-	Prefix string `json:"prefix"`
+	Type    string `json:"type"`
+	Command string `json:"command"`
 }
+
+const (
+	DecisionApproveOnce        = "approve_once"
+	DecisionAlwaysAllowCommand = "always_allow_command"
+	DecisionDeny               = "deny"
+)
 
 // Result is the user's decision.
 type Result struct {
-	Decision        string           `json:"decision"` // "approve_once", "always_allow_command_prefix", "deny"
+	Decision        string           `json:"decision"` // "approve_once", "always_allow_command", "deny"
 	Reason          string           `json:"reason,omitempty"`
 	PolicyAmendment *PolicyAmendment `json:"policy_amendment,omitempty"`
 }
@@ -70,28 +76,31 @@ func (s *StdinPrompt) Request(ctx context.Context, req Request) (Result, error) 
 		}
 	}
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprint(os.Stderr, "Approve? [y=once/a=always/n=deny]: ")
+	if req.SuggestedPolicyAmendment != nil {
+		fmt.Fprint(os.Stderr, "Approve? [y=once/a=always/n=deny]: ")
+	} else {
+		fmt.Fprint(os.Stderr, "Approve? [y=once/n=deny]: ")
+	}
 
 	reader := bufio.NewReader(os.Stdin)
 	line, err := reader.ReadString('\n')
 	if err != nil {
-		return Result{Decision: "deny", Reason: fmt.Sprintf("Read error: %v", err)}, nil
+		return Result{Decision: DecisionDeny, Reason: fmt.Sprintf("Read error: %v", err)}, nil
 	}
 	line = strings.TrimSpace(strings.ToLower(line))
 
 	switch line {
 	case "y":
-		return Result{Decision: "approve_once"}, nil
+		return Result{Decision: DecisionApproveOnce}, nil
 	case "a":
-		var amend *PolicyAmendment
-		if req.SuggestedPolicyAmendment != nil {
-			amend = req.SuggestedPolicyAmendment
+		if req.SuggestedPolicyAmendment == nil {
+			return Result{Decision: DecisionDeny, Reason: "Always allow is not available for this action."}, nil
 		}
-		return Result{Decision: "always_allow_command_prefix", PolicyAmendment: amend}, nil
+		return Result{Decision: DecisionAlwaysAllowCommand, PolicyAmendment: req.SuggestedPolicyAmendment}, nil
 	case "n":
-		return Result{Decision: "deny", Reason: "Denied by user."}, nil
+		return Result{Decision: DecisionDeny, Reason: "Denied by user."}, nil
 	default:
-		return Result{Decision: "deny", Reason: fmt.Sprintf("Unrecognized response '%s'.", line)}, nil
+		return Result{Decision: DecisionDeny, Reason: fmt.Sprintf("Unrecognized response '%s'.", line)}, nil
 	}
 }
 
@@ -99,5 +108,24 @@ func (s *StdinPrompt) Request(ctx context.Context, req Request) (Result, error) 
 type NoOpPrompt struct{}
 
 func (n *NoOpPrompt) Request(ctx context.Context, req Request) (Result, error) {
-	return Result{Decision: "deny", Reason: "No approval prompt configured."}, nil
+	return Result{Decision: DecisionDeny, Reason: "No approval prompt configured."}, nil
+}
+
+// ValidateResult rejects unknown decisions and policy amendments that do not
+// exactly match the request shown to the user.
+func ValidateResult(req Request, res Result) error {
+	switch res.Decision {
+	case DecisionApproveOnce, DecisionDeny:
+		return nil
+	case DecisionAlwaysAllowCommand:
+		if req.SuggestedPolicyAmendment == nil || res.PolicyAmendment == nil {
+			return fmt.Errorf("always allow requires a suggested policy amendment")
+		}
+		if *res.PolicyAmendment != *req.SuggestedPolicyAmendment {
+			return fmt.Errorf("policy amendment does not match approval request")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown approval decision: %s", res.Decision)
+	}
 }

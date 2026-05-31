@@ -29,13 +29,13 @@ func (t *listSkillsTool) Description() string {
 	return "List loaded skills and their metadata"
 }
 func (t *listSkillsTool) Schema() map[string]any {
-	return map[string]any{
-		"type":       "object",
-		"properties": map[string]any{},
-	}
+	return objectSchema(map[string]any{})
 }
 
 func (t *listSkillsTool) Execute(ctx context.Context, input json.RawMessage) (any, error) {
+	if err := decodeInput(input, &struct{}{}); err != nil {
+		return nil, err
+	}
 	out := make([]listedSkill, 0, len(t.skills))
 	for _, skill := range t.skills {
 		out = append(out, listedSkill{

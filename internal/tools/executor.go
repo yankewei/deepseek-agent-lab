@@ -24,6 +24,7 @@ type Result struct {
 	Name        string
 	Content     string
 	ExecutionID string
+	ExitCode    *int
 	Err         error
 }
 
@@ -79,7 +80,7 @@ func (e Executor) executeOne(ctx context.Context, call Call) Result {
 
 	tool := e.Registry.Get(call.Name)
 	if tool == nil {
-		result := Result{ID: call.ID, Name: call.Name, Content: fmt.Sprintf(`{"error": "unknown tool: %s"}`, call.Name)}
+		result := failedResult(call, "", fmt.Errorf("unknown tool: %s", call.Name))
 		e.appendToolResult(result)
 		return result
 	}
@@ -97,7 +98,7 @@ func (e Executor) executeOne(ctx context.Context, call Call) Result {
 		req, required, err := aware.ApprovalRequest(call.Input)
 		if err != nil {
 			e.Tracker.UpdateRecord(rec.ID, map[string]any{"status": execution.StatusFailed, "error": err.Error()})
-			result := Result{ID: call.ID, Name: call.Name, Content: fmt.Sprintf(`{"error": "%s"}`, err.Error()), ExecutionID: rec.ID, Err: err}
+			result := failedResult(call, rec.ID, err)
 			e.appendToolResult(result)
 			return result
 		}
@@ -115,14 +116,20 @@ func (e Executor) executeOne(ctx context.Context, call Call) Result {
 			res, err := prompt.Request(ctx, *req)
 			if err != nil {
 				e.Tracker.UpdateRecord(rec.ID, map[string]any{"status": execution.StatusFailed, "error": err.Error()})
-				result := Result{ID: call.ID, Name: call.Name, Content: fmt.Sprintf(`{"error": "%s"}`, err.Error()), ExecutionID: rec.ID, Err: err}
+				result := failedResult(call, rec.ID, err)
 				e.appendToolResult(result)
 				return result
 			}
 			if e.Logger != nil {
 				_ = e.Logger.AppendApprovalResolved(approvalID, res, rec.ID)
 			}
-			if res.Decision == "deny" {
+			if err := approval.ValidateResult(*req, res); err != nil {
+				e.Tracker.UpdateRecord(rec.ID, map[string]any{"status": execution.StatusFailed, "error": err.Error()})
+				result := failedResult(call, rec.ID, err)
+				e.appendToolResult(result)
+				return result
+			}
+			if res.Decision == approval.DecisionDeny {
 				reason := res.Reason
 				if reason == "" {
 					reason = "Denied by user."
@@ -149,7 +156,7 @@ func (e Executor) executeOne(ctx context.Context, call Call) Result {
 	output, err := tool.Execute(ctx, call.Input)
 	if err != nil {
 		e.Tracker.UpdateRecord(rec.ID, map[string]any{"status": execution.StatusFailed, "error": err.Error()})
-		result := Result{ID: call.ID, Name: call.Name, Content: fmt.Sprintf(`{"error": "%s"}`, err.Error()), ExecutionID: rec.ID, Err: err}
+		result := failedResult(call, rec.ID, err)
 		e.appendToolResult(result)
 		return result
 	}
@@ -173,16 +180,39 @@ func (e Executor) allReadOnly(calls []Call) bool {
 func marshalResult(output any) string {
 	outJSON, err := json.Marshal(output)
 	if err != nil {
-		return fmt.Sprintf(`{"error": "%s"}`, err.Error())
+		return `{"error":"result serialization failed"}`
 	}
 	return string(outJSON)
+}
+
+func errorContent(err error) string {
+	result := map[string]any{"error": err.Error()}
+	if detailed, ok := err.(interface{ Details() any }); ok {
+		result["details"] = detailed.Details()
+	}
+	return marshalResult(result)
+}
+
+func failedResult(call Call, executionID string, err error) Result {
+	result := Result{
+		ID:          call.ID,
+		Name:        call.Name,
+		Content:     errorContent(err),
+		ExecutionID: executionID,
+		Err:         err,
+	}
+	if withExitCode, ok := err.(interface{ ExitCode() int }); ok {
+		exitCode := withExitCode.ExitCode()
+		result.ExitCode = &exitCode
+	}
+	return result
 }
 
 func canceledResult(call Call, err error) Result {
 	return Result{
 		ID:      call.ID,
 		Name:    call.Name,
-		Content: fmt.Sprintf(`{"error": "%s"}`, err.Error()),
+		Content: errorContent(err),
 		Err:     err,
 	}
 }

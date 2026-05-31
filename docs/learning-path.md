@@ -100,7 +100,7 @@ prompt command
 -> ask user
 -> approval decision object
 -> approve_once: run
--> always_allow_command_prefix: run and remember prefix for this process
+-> always_allow_command: run and remember the exact command for this process
 -> deny: skip
 ```
 

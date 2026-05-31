@@ -37,7 +37,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "approval":
 				decision := m.form.GetString("decision")
 				var result approval.Result
-				if m.approvalReq != nil && m.approvalReq.SuggestedPolicyAmendment != nil && decision == "always_allow_command_prefix" {
+				if m.approvalReq != nil && m.approvalReq.SuggestedPolicyAmendment != nil && decision == approval.DecisionAlwaysAllowCommand {
 					result = approval.Result{
 						Decision:        decision,
 						PolicyAmendment: m.approvalReq.SuggestedPolicyAmendment,
@@ -362,7 +362,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			})
 
 			exitCode := 0
-			if tr.Err != nil {
+			if tr.ExitCode != nil {
+				exitCode = *tr.ExitCode
+			} else if tr.Err != nil {
 				exitCode = 1
 			}
 

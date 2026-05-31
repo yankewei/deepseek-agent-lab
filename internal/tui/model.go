@@ -557,19 +557,10 @@ func (m *Model) messageListAtBottom() bool {
 	return m.messageList.AtBottomHeight(height)
 }
 
-// SetPrompt rebuilds the tool registry with the given approval prompt.
+// SetPrompt updates the approval prompt without rebuilding the tool registry.
 func (m *Model) SetPrompt(prompt approval.Prompt) {
 	m.approval = prompt
-	m.registry = tools.CreateRegistryWithLogger(m.tracker, prompt, m.runLogger)
-	m.toolDefs = nil
-	for _, t := range m.registry.All() {
-		m.toolDefs = append(m.toolDefs, llm.ToolDefinition{
-			Name:        t.Name(),
-			Description: t.Description(),
-			Schema:      t.Schema(),
-		})
-	}
-	m.refreshEstimatedContextTokens()
+	m.registry.SetApprovalPrompt(prompt)
 }
 
 func (m *Model) recordRunLog(err error) {
