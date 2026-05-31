@@ -19,6 +19,12 @@ import (
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// If a huh form is active, route all messages to it first.
 	if m.form != nil {
+		if sizeMsg, ok := msg.(tea.WindowSizeMsg); ok {
+			m.width = sizeMsg.Width
+			m.height = sizeMsg.Height
+			m.updateLayout()
+			m.resizeForm()
+		}
 		f, cmd := m.form.Update(msg)
 		if f, ok := f.(*huh.Form); ok {
 			m.form = f
@@ -51,6 +57,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.messageList.Add(Message{Type: MsgSystem, Content: fmt.Sprintf("已切换模型: %s", modelName), Status: StatusDone})
 					m.recordRunLog(m.runLogger.AppendModelSwitched(modelName))
 				}
+				m.editor.Reset()
 			}
 			m.form = nil
 			m.formKind = ""
@@ -152,7 +159,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "enter":
 			if m.slashMenuActive() {
-				m.selectSlashCommand()
+				text := strings.TrimSpace(m.editor.Value())
+				matches := m.matchedSlashCommands()
+				exactMatch := false
+				for _, match := range matches {
+					if match.Name == text {
+						exactMatch = true
+						break
+					}
+				}
+				if exactMatch {
+					cmds = append(cmds, m.submit(text))
+				} else {
+					m.selectSlashCommand()
+				}
 			} else {
 				text := strings.TrimSpace(m.editor.Value())
 				if text != "" && !m.isRunning {
@@ -194,6 +214,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.approvalResCh = msg.responseCh
 		m.form, _ = approvalform.New(msg.req)
 		m.formKind = "approval"
+		m.resizeForm()
 		cmds = append(cmds, m.form.Init())
 
 	case userSubmittedMsg:

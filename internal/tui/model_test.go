@@ -1003,3 +1003,35 @@ func TestModelSlashCommandOpensSelector(t *testing.T) {
 		t.Fatalf("formKind = %q, want \"model\"", m.formKind)
 	}
 }
+
+func TestModelSlashCommandExactEnterOpensSelector(t *testing.T) {
+	m := NewModel(nil, "deepseek-v4-flash", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	m.editor.SetValue("/model")
+	m.syncSlashMenu()
+
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	m = updated.(*Model)
+
+	if m.form == nil {
+		t.Fatal("pressing enter on exact /model command should open selector")
+	}
+}
+
+func TestModelSelectorRendersAsModalOverConversation(t *testing.T) {
+	m := NewModel(nil, "deepseek-v4-flash", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = updated.(*Model)
+	m.messageList.Add(Message{Type: MsgAssistant, Content: "conversation remains visible", Status: StatusDone})
+
+	_ = m.submit("/model")
+	updated, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = updated.(*Model)
+	view := m.View().Content
+
+	if !strings.Contains(view, "conversation remains visible") {
+		t.Fatalf("modal view should preserve conversation content, got:\n%s", view)
+	}
+	if !strings.Contains(view, "选择模型") {
+		t.Fatalf("modal view should contain selector title, got:\n%s", view)
+	}
+}

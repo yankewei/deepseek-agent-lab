@@ -7,6 +7,11 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
+var modalBoxStyle = lipgloss.NewStyle().
+	Border(lipgloss.RoundedBorder()).
+	BorderForeground(lipgloss.Color("6")).
+	Padding(1, 2)
+
 // View implements tea.Model.
 func (m *Model) View() tea.View {
 	if m.width == 0 || m.height == 0 {
@@ -28,7 +33,7 @@ func (m *Model) View() tea.View {
 	base := lipgloss.JoinVertical(lipgloss.Left, sections...)
 
 	if m.form != nil {
-		base = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.form.View())
+		base = renderModal(base, m.form.View(), m.width, m.height)
 	}
 
 	v := tea.NewView(base)
@@ -37,6 +42,20 @@ func (m *Model) View() tea.View {
 		v.MouseMode = tea.MouseModeCellMotion
 	}
 	return v
+}
+
+func renderModal(base, content string, width, height int) string {
+	modal := modalBoxStyle.Render(content)
+	modalWidth, modalHeight := lipgloss.Size(modal)
+	x := max((width-modalWidth)/2, 0)
+	y := max((height-modalHeight)/2, 0)
+
+	canvas := lipgloss.NewCanvas(width, height)
+	canvas.Compose(lipgloss.NewCompositor(
+		lipgloss.NewLayer(base),
+		lipgloss.NewLayer(modal).X(x).Y(y).Z(1),
+	))
+	return canvas.Render()
 }
 
 func (m *Model) renderFooter() string {

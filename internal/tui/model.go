@@ -258,7 +258,22 @@ func (m *Model) showModelSelector() tea.Cmd {
 	}
 	m.form = selector.NewForm("选择模型", "选择要使用的 DeepSeek 模型", "model", choices)
 	m.formKind = "model"
+	m.resizeForm()
 	return m.form.Init()
+}
+
+func (m *Model) resizeForm() {
+	if m.form == nil || m.width <= 0 {
+		return
+	}
+
+	const (
+		preferredWidth = 56
+		frameWidth     = 6
+		screenMargin   = 4
+	)
+	width := min(preferredWidth, m.width-frameWidth-screenMargin)
+	m.form.WithWidth(max(width, 1))
 }
 
 // handleSkillCommand processes a skill: command by injecting the skill into the system prompt.
