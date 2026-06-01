@@ -6,76 +6,34 @@ import (
 	"os"
 	"strings"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/huh/v2"
 	"github.com/charmbracelet/glamour"
 
-	"github.com/yankewei/ds-coding-agent/internal/approval"
 	"github.com/yankewei/ds-coding-agent/internal/llm"
-	"github.com/yankewei/ds-coding-agent/internal/tui/approvalform"
 )
 
 // Update implements tea.Model.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// If a huh form is active, route all messages to it first.
-	if m.form != nil {
+	// If a modal is active, route all messages to it first.
+	if m.modal.Active() {
 		if sizeMsg, ok := msg.(tea.WindowSizeMsg); ok {
 			m.width = sizeMsg.Width
 			m.height = sizeMsg.Height
 			m.updateLayout()
-			m.resizeForm()
+			m.modal.Resize(m.width)
 		}
-		f, cmd := m.form.Update(msg)
-		if f, ok := f.(*huh.Form); ok {
-			m.form = f
-		}
-
-		// Check if the form is completed or aborted.
-		switch m.form.State {
-		case huh.StateCompleted:
-			switch m.formKind {
-			case "approval":
-				decision := m.form.GetString("decision")
-				var result approval.Result
-				if m.approvalReq != nil && m.approvalReq.SuggestedPolicyAmendment != nil && decision == approval.DecisionAlwaysAllowCommand {
-					result = approval.Result{
-						Decision:        decision,
-						PolicyAmendment: m.approvalReq.SuggestedPolicyAmendment,
-					}
-				} else {
-					result = approval.Result{Decision: decision}
-				}
-				if m.approvalResCh != nil {
-					m.approvalResCh <- result
-				}
-			case "model":
-				modelName := m.form.GetString("model")
-				if modelName != "" {
-					m.modelName = modelName
-					m.statusLine.SetModelName(modelName)
-					m.refreshEstimatedContextTokens()
-					m.messageList.Add(Message{Type: MsgSystem, Content: fmt.Sprintf("已切换模型: %s", modelName), Status: StatusDone})
-					m.recordRunLog(m.runLogger.AppendModelSwitched(modelName))
-				}
-				m.editor.Reset()
+		result, done, cmd := m.modal.Update(msg)
+		if done {
+			resultCmd := m.handleModalResult(result)
+			if cmd == nil {
+				return m, resultCmd
 			}
-			m.form = nil
-			m.formKind = ""
-			m.approvalReq = nil
-			m.approvalResCh = nil
-			return m, cmd
-
-		case huh.StateAborted:
-			if m.formKind == "approval" && m.approvalResCh != nil {
-				m.approvalResCh <- approval.Result{Decision: "deny", Reason: "Aborted"}
+			if resultCmd == nil {
+				return m, cmd
 			}
-			m.form = nil
-			m.formKind = ""
-			m.approvalReq = nil
-			m.approvalResCh = nil
-			return m, cmd
+			return m, tea.Batch(cmd, resultCmd)
 		}
-
 		return m, cmd
 	}
 
@@ -83,27 +41,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Editor must process keys first so slash menu state reflects the latest
 	// typed prefix before viewport navigation sees the same key.
+	editorWasEmpty := strings.TrimSpace(m.editor.Value()) == ""
 	{
 		newEditor, cmd := m.editor.Update(msg)
 		m.editor = newEditor
 		cmds = append(cmds, cmd)
 	}
-	m.syncSlashMenu()
-
-	// Skip messageList viewport scroll when the slash command menu consumes arrows.
-	skipMessageList := false
-	if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
-		if m.slashMenuActive() {
-			switch keyMsg.String() {
-			case "up", "down":
-				skipMessageList = true
-			}
-		}
-	}
-	if !skipMessageList {
-		// MessageList no longer wraps a viewport; scroll is handled
-		// directly via ScrollUp/ScrollDown below.
-	}
+	m.editor.ShowSuggestions = false
+	m.slashMenu.Sync(m.editor.Value())
 
 	{
 		s, cmd := m.statusLine.Update(msg)
@@ -139,66 +84,40 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.messageList.ClearRenderCache()
 		}
 	case tea.KeyPressMsg:
-		switch msg.String() {
-		case "ctrl+c":
-			if m.isRunning && m.cancelTurn != nil {
-				m.cancelTurn()
-				m.cancelTurn = nil
-				m.cancelStream = nil
-				m.recordRunLog(m.runLogger.AppendRunStatus("interrupted"))
-			} else if m.isRunning && m.cancelStream != nil {
-				m.cancelStream()
-				m.cancelStream = nil
+		switch {
+		case key.Matches(msg, m.keys.Cancel):
+			if m.turn.interrupt() {
 				m.recordRunLog(m.runLogger.AppendRunStatus("interrupted"))
 			} else {
 				return m, tea.Quit
 			}
-		case "q":
-			if !m.isRunning && strings.TrimSpace(m.editor.Value()) == "" {
+		case key.Matches(msg, m.keys.Quit):
+			if !m.turn.isRunning && editorWasEmpty {
 				return m, tea.Quit
 			}
-		case "enter":
-			if m.slashMenuActive() {
+		case key.Matches(msg, m.keys.Submit):
+			if m.slashMenu.Active() {
 				text := strings.TrimSpace(m.editor.Value())
-				matches := m.matchedSlashCommands()
-				exactMatch := false
-				for _, match := range matches {
-					if match.Name == text {
-						exactMatch = true
-						break
-					}
-				}
-				if exactMatch {
+				if m.slashMenu.HasExactMatch() {
 					cmds = append(cmds, m.submit(text))
-				} else {
-					m.selectSlashCommand()
+				} else if selected, ok := m.slashMenu.Select(); ok {
+					m.setEditorValue(selected)
 				}
 			} else {
 				text := strings.TrimSpace(m.editor.Value())
-				if text != "" && !m.isRunning {
+				if text != "" && !m.turn.isRunning {
 					cmds = append(cmds, m.submit(text))
 				}
 			}
-		case "tab":
-			if m.slashMenuActive() {
-				m.selectSlashCommand()
-			}
-		case "up":
-			if m.slashMenuActive() {
-				m.moveSlashSelection(-1)
-			}
-		case "down":
-			if m.slashMenuActive() {
-				m.moveSlashSelection(1)
-			}
-		case "esc":
-			m.closeSlashMenu()
-		case "ctrl+m":
+		case key.Matches(msg, m.keys.ToggleMouse):
 			m.mouseEnabled = !m.mouseEnabled
-		case "pgup":
+		case key.Matches(msg, m.keys.PageUp):
 			m.messageList.ScrollUp(3)
-		case "pgdown":
+		case key.Matches(msg, m.keys.PageDown):
 			m.messageList.ScrollDown(3)
+		}
+		if selected, ok := m.slashMenu.Update(msg); ok {
+			m.setEditorValue(selected)
 		}
 
 	case tea.MouseWheelMsg:
@@ -210,15 +129,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case approvalRequestMsg:
-		m.approvalReq = &msg.req
-		m.approvalResCh = msg.responseCh
-		m.form, _ = approvalform.New(msg.req)
-		m.formKind = "approval"
-		m.resizeForm()
-		cmds = append(cmds, m.form.Init())
+		cmds = append(cmds, m.modal.OpenApproval(msg.req, msg.responseCh, m.width))
 
 	case userSubmittedMsg:
-		if !m.isRunning {
+		if !m.turn.isRunning {
 			cmds = append(cmds, m.submit(msg.text))
 		}
 
@@ -226,17 +140,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.startStreamCmd())
 
 	case streamStartedMsg:
-		m.eventStream = msg.events
-		m.cancelStream = msg.cancel
+		m.turn.eventStream = msg.events
+		m.turn.cancelStream = msg.cancel
 		m.messageList.Add(Message{Type: MsgAssistant, Status: StatusPending})
 		m.scrollMessageListToBottom()
-		m.thinkingBuf = ""
-		m.pendingToolCalls = nil
-		m.finishReason = ""
-		m.finishUsage = llm.Usage{}
-		m.streamFailed = false
+		m.turn.resetStream()
 		m.recordRunLog(m.runLogger.AppendModelStreamStarted())
-		cmd := append(cmds, readNextEventCmd(m.eventStream))
+		cmd := append(cmds, readNextEventCmd(m.turn.eventStream))
 		return m, tea.Batch(cmd...)
 
 	case streamEventMsg:
@@ -254,27 +164,27 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case llm.EventReasoningDelta:
 			wasAtBottom := m.messageListAtBottom()
-			m.thinkingBuf += e.Text
-			m.statusLine.SetThinking(m.thinkingBuf)
+			m.turn.thinkingBuf += e.Text
+			m.statusLine.SetThinking(m.turn.thinkingBuf)
 			if thinking := m.messageList.Find(MsgThinking, StatusStreaming); thinking != nil {
-				thinking.Content = m.thinkingBuf
+				thinking.Content = m.turn.thinkingBuf
 				if wasAtBottom {
 					m.scrollMessageListToBottom()
 				}
 			} else {
-				m.messageList.Add(Message{Type: MsgThinking, Content: m.thinkingBuf, Status: StatusStreaming})
+				m.messageList.Add(Message{Type: MsgThinking, Content: m.turn.thinkingBuf, Status: StatusStreaming})
 				m.scrollMessageListToBottom()
 			}
 		case llm.EventToolCall:
-			m.pendingToolCalls = append(m.pendingToolCalls, llm.ToolCallDef{
+			m.turn.pendingToolCalls = append(m.turn.pendingToolCalls, llm.ToolCallDef{
 				ID:    e.ID,
 				Name:  e.Name,
 				Input: json.RawMessage(e.ArgsJSON),
 			})
-			m.toolCallInputs[e.ID] = e.ArgsJSON
+			m.turn.toolCallInputs[e.ID] = e.ArgsJSON
 		case llm.EventFinish:
-			m.finishReason = e.FinishReason
-			m.finishUsage = e.Usage
+			m.turn.finishReason = e.FinishReason
+			m.turn.finishUsage = e.Usage
 			assistant := m.messageList.LastAssistant()
 			if assistant != nil {
 				assistant.Status = StatusDone
@@ -292,7 +202,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusLine.SetMode(ModeIdle)
 			m.statusLine.ClearThinking()
 		case llm.EventError:
-			m.streamFailed = true
+			m.turn.streamFailed = true
 			if thinking := m.messageList.Find(MsgThinking, StatusStreaming); thinking != nil {
 				thinking.Status = StatusDone
 			}
@@ -301,20 +211,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusLine.ClearThinking()
 			m.recordRunLog(m.runLogger.AppendRunStatus("failed"))
 		}
-		cmds = append(cmds, readNextEventCmd(m.eventStream))
+		cmds = append(cmds, readNextEventCmd(m.turn.eventStream))
 	case streamDoneMsg:
-		if m.streamFailed {
+		if m.turn.streamFailed {
 			if thinking := m.messageList.Find(MsgThinking, StatusStreaming); thinking != nil {
 				thinking.Status = StatusDone
 			}
-			m.isRunning = false
+			m.turn.finish()
 			m.statusLine.SetMode(ModeIdle)
-			m.cancelStream = nil
-			m.cancelTurn = nil
-			m.turnCtx = nil
-			m.thinkingBuf = ""
-			m.pendingToolCalls = nil
-			m.streamFailed = false
+			m.turn.resetStream()
 			break
 		}
 		assistant := m.messageList.LastAssistant()
@@ -322,37 +227,31 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if thinking := m.messageList.Find(MsgThinking, StatusStreaming); thinking != nil {
 				thinking.Status = StatusDone
 			}
-			m.recordRunLog(m.runLogger.AppendModelReasoning(m.thinkingBuf))
+			m.recordRunLog(m.runLogger.AppendModelReasoning(m.turn.thinkingBuf))
 			m.recordRunLog(m.runLogger.AppendModelText(assistant.Content))
-			m.recordRunLog(m.runLogger.AppendModelStreamFinished(m.finishReason, m.finishUsage))
+			m.recordRunLog(m.runLogger.AppendModelStreamFinished(m.turn.finishReason, m.turn.finishUsage))
 			llmMsg := llm.Message{
 				Role:             "assistant",
 				Content:          assistant.Content,
-				ReasoningContent: m.thinkingBuf,
-				ToolCalls:        m.pendingToolCalls,
+				ReasoningContent: m.turn.thinkingBuf,
+				ToolCalls:        m.turn.pendingToolCalls,
 			}
 			m.messages = append(m.messages, llmMsg)
 			if len(llmMsg.ToolCalls) > 0 {
 				cmds = append(cmds, m.executeToolsCmd(llmMsg.ToolCalls))
 				m.statusLine.SetMode(ModeExecuting)
 			} else {
-				m.isRunning = false
+				m.turn.finish()
 				m.statusLine.SetMode(ModeIdle)
 				m.recordRunLog(m.runLogger.AppendRunStatus("completed"))
-				m.cancelStream = nil
-				m.cancelTurn = nil
-				m.turnCtx = nil
 			}
 		} else {
-			m.isRunning = false
+			m.turn.finish()
 			m.statusLine.SetMode(ModeIdle)
 			m.recordRunLog(m.runLogger.AppendRunStatus("completed"))
-			m.cancelStream = nil
-			m.cancelTurn = nil
-			m.turnCtx = nil
 		}
-		m.thinkingBuf = ""
-		m.pendingToolCalls = nil
+		m.turn.thinkingBuf = ""
+		m.turn.pendingToolCalls = nil
 	case toolResultsMsg:
 		for _, tr := range msg.results {
 			m.messages = append(m.messages, llm.Message{
@@ -375,48 +274,68 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					"tool_name":  tr.Name,
 					"success":    tr.Err == nil,
 					"exit_code":  exitCode,
-					"tool_input": m.toolCallInputs[tr.ID],
+					"tool_input": m.turn.toolCallInputs[tr.ID],
 				},
 				Status: StatusDone,
 			})
 		}
-		m.toolCallInputs = make(map[string]string)
-		if m.turnCtx != nil && m.turnCtx.Err() != nil {
-			m.isRunning = false
+		m.turn.resetToolInputs()
+		if m.turn.ctx != nil && m.turn.ctx.Err() != nil {
+			m.turn.finish()
 			m.statusLine.SetMode(ModeIdle)
 			m.recordRunLog(m.runLogger.AppendRunStatus("interrupted"))
-			m.cancelStream = nil
-			m.cancelTurn = nil
-			m.turnCtx = nil
 			return m, tea.Batch(cmds...)
 		}
 		cmds = append(cmds, m.startStreamCmd())
 		m.statusLine.SetMode(ModeStreaming)
 
 	case turnDoneMsg:
-		m.isRunning = false
+		m.turn.finish()
 		m.statusLine.SetMode(ModeIdle)
 		m.recordRunLog(m.runLogger.AppendRunStatus("completed"))
-		m.cancelStream = nil
-		m.cancelTurn = nil
-		m.turnCtx = nil
 
 	case errorMsg:
-		m.isRunning = false
+		m.turn.finish()
 		m.statusLine.SetMode(ModeIdle)
 		m.recordRunLog(m.runLogger.AppendRunStatus("failed"))
-		m.cancelStream = nil
-		m.cancelTurn = nil
-		m.turnCtx = nil
 		m.messageList.Add(Message{Type: MsgError, Content: msg.err.Error(), Status: StatusError})
 	}
 
-	m.syncSlashMenu()
+	m.editor.ShowSuggestions = false
+	m.slashMenu.Sync(m.editor.Value())
 
 	if m.width > 0 {
 		m.updateLayout()
 	}
 	return m, tea.Batch(cmds...)
+}
+
+func (m *Model) setEditorValue(value string) {
+	m.editor.SetValue(value)
+	m.editor.CursorEnd()
+}
+
+func (m *Model) handleModalResult(result modalResult) tea.Cmd {
+	if result.kind == modalKindModel {
+		m.editor.Reset()
+		if result.modelName == "" {
+			return nil
+		}
+		m.modelName = result.modelName
+		m.statusLine.SetModelName(result.modelName)
+		m.refreshEstimatedContextTokens()
+		m.messageList.Add(Message{Type: MsgSystem, Content: fmt.Sprintf("已切换模型: %s", result.modelName), Status: StatusDone})
+		m.recordRunLog(m.runLogger.AppendModelSwitched(result.modelName))
+	}
+	if result.approval == nil || result.approvalResponseCh == nil {
+		return nil
+	}
+	approvalResult := *result.approval
+	responseCh := result.approvalResponseCh
+	return func() tea.Msg {
+		responseCh <- approvalResult
+		return nil
+	}
 }
 
 func readNextEventCmd(events <-chan llm.Event) tea.Cmd {

@@ -73,6 +73,17 @@ Mandatory pre-push checklist (must all pass):
 
 If any step fails, fix it first. Only push after all steps are green.
 
+## Bubble Tea Architecture
+
+**Keep the TUI aligned with Bubble Tea's Elm architecture.**
+
+- Keep one top-level Bubble Tea model as the coordinator.
+- Model state changes belong in `Update`; rendering belongs in `View`.
+- Run asynchronous work through `tea.Cmd`, return results as `tea.Msg`, and handle those messages in `Update`.
+- Prefer focused child models for UI behavior with their own state, `Update`, and `View`.
+- Keep pure logic in small modules when it does not need Bubble Tea state.
+- Do not introduce a second imperative event loop for TUI behavior.
+
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.

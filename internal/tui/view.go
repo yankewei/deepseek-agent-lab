@@ -32,8 +32,8 @@ func (m *Model) View() tea.View {
 
 	base := lipgloss.JoinVertical(lipgloss.Left, sections...)
 
-	if m.form != nil {
-		base = renderModal(base, m.form.View(), m.width, m.height)
+	if m.modal.Active() {
+		base = renderModal(base, m.modal.View(), m.width, m.height)
 	}
 
 	v := tea.NewView(base)
@@ -62,7 +62,7 @@ func (m *Model) renderFooter() string {
 	var footerSections []string
 	footerSections = append(footerSections, m.renderStatusLine())
 	footerSections = append(footerSections, m.renderEditor())
-	if menu := m.renderSlashCommandMenu(); menu != "" {
+	if menu := m.slashMenu.View(); menu != "" {
 		footerSections = append(footerSections, menu)
 	}
 	footerSections = append(footerSections, m.renderHelpBar())

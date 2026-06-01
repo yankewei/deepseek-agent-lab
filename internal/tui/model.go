@@ -6,9 +6,9 @@ import (
 	"os"
 	"strings"
 
+	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/glamour"
 	"github.com/sashabaranov/go-openai"
@@ -45,10 +45,9 @@ type Model struct {
 	messageList *MessageList
 	editor      textinput.Model
 	statusLine  *StatusLine
+	slashMenu   slashMenuModel
+	help        help.Model
 	keys        KeyMap
-	slashIndex  int
-	slashHidden bool
-	slashValue  string
 
 	// Agent config
 	client       *openai.Client
@@ -67,18 +66,8 @@ type Model struct {
 	rendererStyle string
 
 	// Conversation state
-	messages         []llm.Message
-	isRunning        bool
-	eventStream      <-chan llm.Event
-	turnCtx          context.Context
-	cancelTurn       context.CancelFunc
-	cancelStream     context.CancelFunc
-	thinkingBuf      string
-	pendingToolCalls []llm.ToolCallDef
-	toolCallInputs   map[string]string // toolID -> argsJSON
-	finishReason     string
-	finishUsage      llm.Usage
-	streamFailed     bool
+	messages []llm.Message
+	turn     turnState
 
 	// Optional initial prompt to auto-start on init.
 	initialPrompt string
@@ -86,15 +75,10 @@ type Model struct {
 	// Resume state.
 	resumeSnapshot *runlog.Snapshot
 
-	// Pending approval state.
-	approvalReq *approval.Request
-
 	// Mouse mode: on by default so mouse-wheel scrolling works.
 	// Toggled with ctrl+m to restore native terminal text selection.
-	mouseEnabled  bool
-	approvalResCh chan approval.Result
-	form          *huh.Form
-	formKind      string // "approval" or "model"
+	mouseEnabled bool
+	modal        modalModel
 }
 
 // NewModel creates a new TUI model.
@@ -133,24 +117,25 @@ func NewModelWithLogger(client *openai.Client, modelName, systemPrompt string, r
 	sl := NewStatusLine()
 	sl.SetModelName(modelName)
 	m := &Model{
-		editor:         ti,
-		messageList:    ml,
-		statusLine:     sl,
-		keys:           DefaultKeyMap(),
-		client:         client,
-		modelName:      modelName,
-		basePrompt:     systemPrompt,
-		systemPrompt:   systemPrompt,
-		registry:       registry,
-		tracker:        tracker,
-		approval:       &approval.NoOpPrompt{},
-		runLogger:      logger,
-		toolDefs:       toolDefs,
-		renderer:       renderer,
-		rendererStyle:  style,
-		toolCallInputs: make(map[string]string),
-		initialPrompt:  initialPrompt,
-		mouseEnabled:   true,
+		editor:        ti,
+		messageList:   ml,
+		statusLine:    sl,
+		keys:          DefaultKeyMap(),
+		help:          help.New(),
+		client:        client,
+		modelName:     modelName,
+		basePrompt:    systemPrompt,
+		systemPrompt:  systemPrompt,
+		registry:      registry,
+		tracker:       tracker,
+		approval:      &approval.NoOpPrompt{},
+		runLogger:     logger,
+		toolDefs:      toolDefs,
+		renderer:      renderer,
+		rendererStyle: style,
+		turn:          newTurnState(),
+		initialPrompt: initialPrompt,
+		mouseEnabled:  true,
 	}
 	m.refreshEstimatedContextTokens()
 	return m
@@ -159,6 +144,7 @@ func NewModelWithLogger(client *openai.Client, modelName, systemPrompt string, r
 // SetSkills configures the skills available for automatic prompt injection.
 func (m *Model) SetSkills(all []skills.Skill) {
 	m.skills = append([]skills.Skill(nil), all...)
+	m.slashMenu.SetSkills(all)
 }
 
 // Init implements tea.Model.
@@ -168,15 +154,15 @@ func (m *Model) Init() tea.Cmd {
 		m.statusLine.Init(),
 	}
 	if m.resumeSnapshot != nil && m.resumeSnapshot.NextAction == runlog.ActionReadyForNextStep {
-		m.isRunning = true
-		m.turnCtx, m.cancelTurn = context.WithCancel(context.Background())
+		m.turn.begin()
 		m.statusLine.SetMode(ModeStreaming)
 		cmds = append(cmds, func() tea.Msg {
 			return resumeContinueMsg{}
 		})
 	} else if m.initialPrompt != "" {
+		initialPrompt := m.initialPrompt
 		cmds = append(cmds, func() tea.Msg {
-			return userSubmittedMsg{text: m.initialPrompt}
+			return userSubmittedMsg{text: initialPrompt}
 		})
 	}
 	return tea.Batch(cmds...)
@@ -184,7 +170,7 @@ func (m *Model) Init() tea.Cmd {
 
 // submit starts a new agent turn with the given user text.
 func (m *Model) submit(text string) tea.Cmd {
-	if m.isRunning || text == "" {
+	if m.turn.isRunning || text == "" {
 		return nil
 	}
 	if strings.HasPrefix(text, "/") {
@@ -194,7 +180,7 @@ func (m *Model) submit(text string) tea.Cmd {
 		return m.handleSkillCommand(text)
 	}
 	m.refreshSystemPrompt(text)
-	m.isRunning = true
+	m.turn.begin()
 	m.messages = append(m.messages, llm.Message{Role: "user", Content: text})
 	m.messageList.Add(Message{Type: MsgUser, Content: text, Status: StatusDone})
 	m.recordRunLog(m.runLogger.AppendUserMessage(text))
@@ -202,7 +188,6 @@ func (m *Model) submit(text string) tea.Cmd {
 	m.statusLine.SetMode(ModeStreaming)
 	m.scrollMessageListToBottom()
 	m.editor.Reset()
-	m.turnCtx, m.cancelTurn = context.WithCancel(context.Background())
 	return m.startStreamCmd()
 }
 
@@ -216,9 +201,8 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		if m.width > 0 {
 			m.updateLayout()
 		}
-		m.toolCallInputs = make(map[string]string)
-		m.thinkingBuf = ""
-		m.pendingToolCalls = nil
+		m.turn.resetToolInputs()
+		m.turn.resetStream()
 		m.statusLine.SetMode(ModeIdle)
 		m.refreshEstimatedContextTokens()
 		m.recordRunLog(m.runLogger.AppendConversationCleared())
@@ -256,24 +240,7 @@ func (m *Model) showModelSelector() tea.Cmd {
 		{Label: "deepseek-chat", Value: "deepseek-chat"},
 		{Label: "deepseek-reasoner", Value: "deepseek-reasoner"},
 	}
-	m.form = selector.NewForm("选择模型", "选择要使用的 DeepSeek 模型", "model", choices)
-	m.formKind = "model"
-	m.resizeForm()
-	return m.form.Init()
-}
-
-func (m *Model) resizeForm() {
-	if m.form == nil || m.width <= 0 {
-		return
-	}
-
-	const (
-		preferredWidth = 56
-		frameWidth     = 6
-		screenMargin   = 4
-	)
-	width := min(preferredWidth, m.width-frameWidth-screenMargin)
-	m.form.WithWidth(max(width, 1))
+	return m.modal.OpenModel(choices, m.width)
 }
 
 // handleSkillCommand processes a skill: command by injecting the skill into the system prompt.
@@ -305,7 +272,7 @@ func (m *Model) handleSkillCommand(text string) tea.Cmd {
 	}
 
 	content := parts[1]
-	m.isRunning = true
+	m.turn.begin()
 	m.messages = append(m.messages, llm.Message{Role: "user", Content: content})
 	m.messageList.Add(Message{Type: MsgUser, Content: content, Status: StatusDone})
 	m.recordRunLog(m.runLogger.AppendUserMessage(content))
@@ -313,178 +280,27 @@ func (m *Model) handleSkillCommand(text string) tea.Cmd {
 	m.statusLine.SetMode(ModeStreaming)
 	m.scrollMessageListToBottom()
 	m.editor.Reset()
-	m.turnCtx, m.cancelTurn = context.WithCancel(context.Background())
 	return m.startStreamCmd()
-}
-
-func (m *Model) matchedSlashCommands() []slashcmd.Command {
-	value := m.editor.Value()
-	if !strings.HasPrefix(value, "/") && !strings.HasPrefix(value, "skill:") {
-		return nil
-	}
-	lower := strings.ToLower(value)
-	var matches []slashcmd.Command
-	for _, cmd := range slashcmd.All() {
-		if strings.HasPrefix(strings.ToLower(cmd.Name), lower) {
-			matches = append(matches, cmd)
-		}
-	}
-	for _, skill := range m.skills {
-		cmd := slashcmd.Command{
-			Name:        "skill:" + skill.Name,
-			Description: skill.Description,
-		}
-		if strings.HasPrefix(lower, "skill:") {
-			if strings.HasPrefix(strings.ToLower(cmd.Name), lower) {
-				matches = append(matches, cmd)
-			}
-		} else if strings.HasPrefix(lower, "/") {
-			query := strings.TrimPrefix(lower, "/")
-			if strings.HasPrefix(strings.ToLower(skill.Name), query) {
-				matches = append(matches, cmd)
-			}
-		}
-	}
-	return matches
-}
-
-func (m *Model) slashMenuActive() bool {
-	value := m.editor.Value()
-	return (strings.HasPrefix(value, "/") || strings.HasPrefix(value, "skill:")) && !m.slashHidden && len(m.matchedSlashCommands()) > 0
-}
-
-func (m *Model) syncSlashMenu() {
-	m.editor.ShowSuggestions = false
-	value := m.editor.Value()
-	if !strings.HasPrefix(value, "/") && !strings.HasPrefix(value, "skill:") {
-		m.slashIndex = 0
-		m.slashHidden = false
-		m.slashValue = ""
-		return
-	}
-	if value != m.slashValue {
-		m.slashHidden = false
-		m.slashValue = value
-	}
-	m.clampSlashIndex()
-}
-
-func (m *Model) clampSlashIndex() {
-	matches := m.matchedSlashCommands()
-	if len(matches) == 0 {
-		m.slashIndex = 0
-		return
-	}
-	if m.slashIndex < 0 {
-		m.slashIndex = len(matches) - 1
-	}
-	if m.slashIndex >= len(matches) {
-		m.slashIndex = 0
-	}
-}
-
-func (m *Model) moveSlashSelection(delta int) {
-	matches := m.matchedSlashCommands()
-	if len(matches) == 0 {
-		m.slashIndex = 0
-		return
-	}
-	m.slashIndex = (m.slashIndex + delta) % len(matches)
-	if m.slashIndex < 0 {
-		m.slashIndex += len(matches)
-	}
-}
-
-func (m *Model) selectSlashCommand() {
-	matches := m.matchedSlashCommands()
-	if len(matches) == 0 {
-		return
-	}
-	m.clampSlashIndex()
-	selected := matches[m.slashIndex].Name
-	m.editor.SetValue(selected)
-	m.editor.CursorEnd()
-	m.slashHidden = true
-	m.slashValue = selected
-}
-
-func (m *Model) closeSlashMenu() {
-	value := m.editor.Value()
-	if !strings.HasPrefix(value, "/") && !strings.HasPrefix(value, "skill:") {
-		return
-	}
-	m.slashHidden = true
-	m.slashValue = value
-}
-
-func slashCommandLabel(cmd slashcmd.Command) string {
-	return strings.TrimPrefix(cmd.Name, "/")
-}
-
-func (m *Model) renderSlashCommandMenu() string {
-	if !m.slashMenuActive() {
-		return ""
-	}
-	matches := m.matchedSlashCommands()
-	total := len(matches)
-
-	const maxVisible = 8
-	startIdx := 0
-	if total > maxVisible {
-		if m.slashIndex >= maxVisible {
-			startIdx = m.slashIndex - maxVisible + 1
-		}
-		if startIdx+maxVisible > total {
-			startIdx = total - maxVisible
-		}
-	}
-	endIdx := startIdx + maxVisible
-	if endIdx > total {
-		endIdx = total
-	}
-
-	lines := make([]string, 0, endIdx-startIdx)
-	itemStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	selectedStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("0")).
-		Background(lipgloss.Color("6")).
-		Bold(true)
-	ellipsisStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	for i := startIdx; i < endIdx; i++ {
-		cmd := matches[i]
-		label := slashCommandLabel(cmd)
-		line := fmt.Sprintf("  %s  %s", label, cmd.Description)
-		if i == m.slashIndex {
-			line = selectedStyle.Render("> " + label + "  " + cmd.Description)
-		} else {
-			line = itemStyle.Render(line)
-		}
-		lines = append(lines, line)
-	}
-	if startIdx > 0 {
-		lines = append([]string{ellipsisStyle.Render("  ...")}, lines...)
-	}
-	if endIdx < total {
-		lines = append(lines, ellipsisStyle.Render("  ..."))
-	}
-	return lipgloss.NewStyle().PaddingLeft(2).Render(strings.Join(lines, "\n"))
 }
 
 // startStreamCmd initiates the LLM stream with a cancellable context.
 func (m *Model) startStreamCmd() tea.Cmd {
-	ctx := m.turnCtx
+	ctx := m.turn.ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	messages := m.messagesForRequest()
 	toolDefs := append([]llm.ToolDefinition(nil), m.toolDefs...)
+	client := m.client
+	modelName := m.modelName
+	cancel := m.turn.cancel
 	m.statusLine.SetEstimatedContextTokens(llm.EstimatePromptTokens(messages, toolDefs))
 	return func() tea.Msg {
-		events, err := llm.Stream(ctx, m.client, m.modelName, messages, toolDefs)
+		events, err := llm.Stream(ctx, client, modelName, messages, toolDefs)
 		if err != nil {
 			return errorMsg{err: err}
 		}
-		return streamStartedMsg{events: events, cancel: m.cancelTurn}
+		return streamStartedMsg{events: events, cancel: cancel}
 	}
 }
 
@@ -512,21 +328,22 @@ func (m *Model) refreshEstimatedContextTokens() {
 
 // executeToolsCmd runs the given tool calls in parallel.
 func (m *Model) executeToolsCmd(calls []llm.ToolCallDef) tea.Cmd {
-	ctx := m.turnCtx
+	ctx := m.turn.ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	toolCalls := make([]tools.Call, len(calls))
+	for i, call := range calls {
+		toolCalls[i] = tools.Call{ID: call.ID, Name: call.Name, Input: call.Input}
+	}
+	executor := tools.Executor{
+		Registry: m.registry,
+		Tracker:  m.tracker,
+		Prompt:   m.approval,
+		Logger:   m.runLogger,
+	}
 	return func() tea.Msg {
-		toolCalls := make([]tools.Call, len(calls))
-		for i, call := range calls {
-			toolCalls[i] = tools.Call{ID: call.ID, Name: call.Name, Input: call.Input}
-		}
-		results := tools.Executor{
-			Registry: m.registry,
-			Tracker:  m.tracker,
-			Prompt:   m.approval,
-			Logger:   m.runLogger,
-		}.Execute(ctx, toolCalls)
+		results := executor.Execute(ctx, toolCalls)
 		return toolResultsMsg{results: results}
 	}
 }
@@ -540,6 +357,7 @@ func (m *Model) updateLayout() {
 		innerWidth = 1
 	}
 	m.editor.SetWidth(innerWidth)
+	m.help.SetWidth(m.contentWidth)
 	m.messageList.SetSize(m.contentWidth, m.currentMessageListHeight())
 	if m.contentWidth != previousContentWidth || m.renderer == nil {
 		m.rebuildRenderer()
@@ -631,7 +449,7 @@ func (m *Model) ResumeFrom(snapshot *runlog.Snapshot) {
 				})
 			}
 			for _, tc := range msg.ToolCalls {
-				m.toolCallInputs[tc.ID] = string(tc.Input)
+				m.turn.toolCallInputs[tc.ID] = string(tc.Input)
 				m.messageList.Add(Message{
 					Type:   MsgToolCall,
 					Status: StatusDone,
@@ -657,7 +475,7 @@ func (m *Model) ResumeFrom(snapshot *runlog.Snapshot) {
 			}
 			meta := map[string]any{
 				"tool_name":  toolName,
-				"tool_input": m.toolCallInputs[msg.ToolCallID],
+				"tool_input": m.turn.toolCallInputs[msg.ToolCallID],
 				"success":    !strings.HasPrefix(msg.Content, `{"error"`),
 			}
 			m.messageList.Add(Message{
@@ -722,11 +540,5 @@ func (m *Model) renderEditor() string {
 }
 
 func (m *Model) renderHelpBar() string {
-	bindings := m.keys.ShortHelp()
-	var parts []string
-	for _, b := range bindings {
-		h := b.Help()
-		parts = append(parts, h.Key+" "+h.Desc)
-	}
-	return lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render(strings.Join(parts, "  "))
+	return m.help.View(m.keys)
 }

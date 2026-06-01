@@ -84,14 +84,10 @@ disco validate-skill <path>
 | `q`       | Quit                    |
 | `ctrl+c`  | Cancel stream           |
 | `/`       | Open slash command menu |
-| `?`       | Help                    |
-| `r`       | Regenerate              |
-| `y`       | Copy message            |
 | `ctrl+m`  | Toggle mouse mode       |
 
-Mouse mode is off by default, allowing native terminal text selection (copy).
-Press `ctrl+m` to enable mouse-wheel scrolling; press again to restore native
-selection.
+Mouse mode is on by default so mouse-wheel scrolling works. Press `ctrl+m` to
+restore native terminal text selection; press again to re-enable mouse mode.
 
 ### Slash Commands
 
@@ -99,6 +95,7 @@ selection.
 | ---------- | -------------------- |
 | `/clear`   | Clear conversation   |
 | `/help`    | Show available commands |
+| `/model`   | Switch model         |
 | `/quit`    | Quit application     |
 | `skill:<name>` | Activate a skill |
 

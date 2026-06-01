@@ -12,9 +12,6 @@ type KeyMap struct {
 	Quit        key.Binding
 	Cancel      key.Binding
 	Search      key.Binding
-	Help        key.Binding
-	Regenerate  key.Binding
-	CopyMessage key.Binding
 	ToggleMouse key.Binding
 }
 
@@ -26,23 +23,20 @@ func DefaultKeyMap() KeyMap {
 		PageDown:    key.NewBinding(key.WithKeys("pgdown"), key.WithHelp("pgdown", "scroll down")),
 		Quit:        key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit")),
 		Cancel:      key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "cancel")),
-		Search:      key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
-		Help:        key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
-		Regenerate:  key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "regenerate")),
-		CopyMessage: key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "copy")),
+		Search:      key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "commands")),
 		ToggleMouse: key.NewBinding(key.WithKeys("ctrl+m"), key.WithHelp("ctrl+m", "mouse")),
 	}
 }
 
 // ShortHelp returns the short help bindings.
 func (k KeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Submit, k.Search, k.Help, k.Quit}
+	return []key.Binding{k.Submit, k.Search, k.Quit}
 }
 
 // FullHelp returns the full help bindings.
 func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Submit, k.PageUp, k.PageDown, k.Quit},
-		{k.Cancel, k.Search, k.Help, k.Regenerate, k.CopyMessage, k.ToggleMouse},
+		{k.Cancel, k.Search, k.ToggleMouse},
 	}
 }

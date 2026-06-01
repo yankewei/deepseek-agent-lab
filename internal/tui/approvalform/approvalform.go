@@ -11,7 +11,7 @@ import (
 
 // New creates a huh form for an approval request using the generic selector.
 // The decision is read via form.GetString("decision") after completion.
-func New(req approval.Request) (*huh.Form, *string) {
+func New(req approval.Request) *huh.Form {
 	opts := []selector.Choice{
 		{Label: "Approve once", Value: "approve_once"},
 		{Label: "Deny", Value: "deny"},
@@ -23,7 +23,7 @@ func New(req approval.Request) (*huh.Form, *string) {
 		}, opts...)
 	}
 
-	return selector.NewForm("⚠️  Approval Required", formatDetails(req), "decision", opts), nil
+	return selector.NewForm("⚠️  Approval Required", formatDetails(req), "decision", opts)
 }
 
 func formatDetails(req approval.Request) string {

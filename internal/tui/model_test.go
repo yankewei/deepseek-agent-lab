@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"context"
@@ -23,10 +24,10 @@ import (
 func TestCtrlCCancelsRunningTurn(t *testing.T) {
 	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
 	ctx, cancel := context.WithCancel(context.Background())
-	m.isRunning = true
-	m.turnCtx = ctx
-	m.cancelTurn = cancel
-	m.cancelStream = cancel
+	m.turn.isRunning = true
+	m.turn.ctx = ctx
+	m.turn.cancel = cancel
+	m.turn.cancelStream = cancel
 
 	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Mod: tea.ModCtrl, Code: 'c'}))
 	got := updated.(*Model)
@@ -34,11 +35,52 @@ func TestCtrlCCancelsRunningTurn(t *testing.T) {
 	if ctx.Err() == nil {
 		t.Fatal("turn context was not canceled")
 	}
-	if got.cancelTurn != nil {
-		t.Fatal("cancelTurn should be cleared after ctrl+c")
+	if got.turn.cancel != nil {
+		t.Fatal("turn.cancel should be cleared after ctrl+c")
 	}
-	if got.cancelStream != nil {
-		t.Fatal("cancelStream should be cleared after ctrl+c")
+	if got.turn.cancelStream != nil {
+		t.Fatal("turn.cancelStream should be cleared after ctrl+c")
+	}
+}
+
+func TestQQuitsWhenEditorStartsEmpty(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+
+	_, cmd := m.Update(keyPress("q"))
+	if cmd == nil {
+		t.Fatal("q should return a quit command when the editor starts empty")
+	}
+	msg := cmd()
+	if _, ok := msg.(tea.QuitMsg); !ok {
+		t.Fatalf("command result = %T, want tea.QuitMsg", msg)
+	}
+}
+
+func TestQTypesWhenEditorHasContent(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	m.editor.SetValue("a")
+
+	updated, _ := m.Update(keyPress("q"))
+	m = updated.(*Model)
+	if got := m.editor.Value(); got != "aq" {
+		t.Fatalf("editor value = %q, want aq", got)
+	}
+}
+
+func TestCustomToggleMouseBindingChangesDispatch(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	m.keys.ToggleMouse = key.NewBinding(key.WithKeys("ctrl+t"), key.WithHelp("ctrl+t", "mouse"))
+
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Mod: tea.ModCtrl, Code: 'm'}))
+	m = updated.(*Model)
+	if !m.mouseEnabled {
+		t.Fatal("ctrl+m should not toggle mouse mode after rebinding")
+	}
+
+	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Mod: tea.ModCtrl, Code: 't'}))
+	m = updated.(*Model)
+	if m.mouseEnabled {
+		t.Fatal("ctrl+t should toggle mouse mode after rebinding")
 	}
 }
 
@@ -47,24 +89,24 @@ func TestCanceledToolResultsEndTurn(t *testing.T) {
 	m := NewModelWithLogger(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "", logger)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	m.isRunning = true
-	m.turnCtx = ctx
-	m.cancelTurn = cancel
-	m.cancelStream = cancel
+	m.turn.isRunning = true
+	m.turn.ctx = ctx
+	m.turn.cancel = cancel
+	m.turn.cancelStream = cancel
 
 	updated, _ := m.Update(toolResultsMsg{results: []tools.Result{
 		{ID: "call-1", Name: "testTool", Content: `{"error":"context canceled"}`, Err: errors.New("context canceled")},
 	}})
 	got := updated.(*Model)
 
-	if got.isRunning {
+	if got.turn.isRunning {
 		t.Fatal("model should stop running after canceled tool results")
 	}
-	if got.turnCtx != nil {
-		t.Fatal("turnCtx should be cleared after canceled tool results")
+	if got.turn.ctx != nil {
+		t.Fatal("turn.ctx should be cleared after canceled tool results")
 	}
-	if got.cancelTurn != nil {
-		t.Fatal("cancelTurn should be cleared after canceled tool results")
+	if got.turn.cancel != nil {
+		t.Fatal("turn.cancel should be cleared after canceled tool results")
 	}
 	if got.statusLine.mode != ModeIdle {
 		t.Fatalf("status mode = %v, want idle", got.statusLine.mode)
@@ -93,7 +135,7 @@ func TestModelPersistsUserModelAndStatusEvents(t *testing.T) {
 	updated, _ = m.Update(streamDoneMsg{})
 	m = updated.(*Model)
 
-	if m.isRunning {
+	if m.turn.isRunning {
 		t.Fatal("model should stop after final stream")
 	}
 
@@ -236,14 +278,14 @@ func TestResumeInitCreatesCancelableTurnContext(t *testing.T) {
 	m.ResumeFrom(&runlog.Snapshot{NextAction: runlog.ActionReadyForNextStep})
 	_ = m.Init()
 
-	if !m.isRunning {
+	if !m.turn.isRunning {
 		t.Fatal("model should be running after auto-resume init")
 	}
-	if m.turnCtx == nil {
-		t.Fatal("turnCtx should be created for resumed continuation")
+	if m.turn.ctx == nil {
+		t.Fatal("turn.ctx should be created for resumed continuation")
 	}
-	if m.cancelTurn == nil {
-		t.Fatal("cancelTurn should be created for resumed continuation")
+	if m.turn.cancel == nil {
+		t.Fatal("turn.cancel should be created for resumed continuation")
 	}
 }
 
@@ -268,13 +310,13 @@ func TestSlashClearPersistsRunLogEvent(t *testing.T) {
 func TestSlashCommandMenuMatchesAndRendersCommands(t *testing.T) {
 	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
 	m.editor.SetValue("/")
-	m.syncSlashMenu()
+	m.slashMenu.Sync(m.editor.Value())
 
-	matches := m.matchedSlashCommands()
+	matches := m.slashMenu.Matches()
 	if len(matches) != 4 {
 		t.Fatalf("len(matches) = %d, want 4", len(matches))
 	}
-	menu := m.renderSlashCommandMenu()
+	menu := m.slashMenu.View()
 	for _, want := range []string{"clear", "help", "model", "quit"} {
 		if !strings.Contains(menu, want) {
 			t.Fatalf("menu = %q, want it to contain %q", menu, want)
@@ -285,7 +327,7 @@ func TestSlashCommandMenuMatchesAndRendersCommands(t *testing.T) {
 			t.Fatalf("menu = %q, should not contain slash-prefixed candidate %q", menu, unwanted)
 		}
 	}
-	if !m.slashMenuActive() {
+	if !m.slashMenu.Active() {
 		t.Fatal("slash menu should be active for /")
 	}
 	if m.editor.ShowSuggestions {
@@ -296,14 +338,14 @@ func TestSlashCommandMenuMatchesAndRendersCommands(t *testing.T) {
 func TestSlashCommandMenuFiltersByPrefix(t *testing.T) {
 	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
 	m.editor.SetValue("/h")
-	m.syncSlashMenu()
+	m.slashMenu.Sync(m.editor.Value())
 
-	matches := m.matchedSlashCommands()
+	matches := m.slashMenu.Matches()
 	if len(matches) != 1 || matches[0].Name != "/help" {
 		t.Fatalf("matches = %+v, want only /help", matches)
 	}
-	if strings.Contains(m.renderSlashCommandMenu(), "/clear") {
-		t.Fatalf("menu = %q, should not contain /clear", m.renderSlashCommandMenu())
+	if strings.Contains(m.slashMenu.View(), "/clear") {
+		t.Fatalf("menu = %q, should not contain /clear", m.slashMenu.View())
 	}
 }
 
@@ -315,26 +357,26 @@ func TestSlashCommandMenuNavigatesAndSelects(t *testing.T) {
 	if got := m.editor.Value(); got != "/" {
 		t.Fatalf("editor value = %q, want /", got)
 	}
-	if m.slashIndex != 0 {
-		t.Fatalf("slashIndex = %d, want 0", m.slashIndex)
+	if m.slashMenu.index != 0 {
+		t.Fatalf("slashMenu.index = %d, want 0", m.slashMenu.index)
 	}
 
 	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
 	m = updated.(*Model)
-	if m.slashIndex != 1 {
-		t.Fatalf("slashIndex = %d, want 1", m.slashIndex)
+	if m.slashMenu.index != 1 {
+		t.Fatalf("slashMenu.index = %d, want 1", m.slashMenu.index)
 	}
 
 	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyUp}))
 	m = updated.(*Model)
-	if m.slashIndex != 0 {
-		t.Fatalf("slashIndex = %d, want 0", m.slashIndex)
+	if m.slashMenu.index != 0 {
+		t.Fatalf("slashMenu.index = %d, want 0", m.slashMenu.index)
 	}
 
 	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyUp}))
 	m = updated.(*Model)
-	if m.slashIndex != 3 {
-		t.Fatalf("slashIndex = %d, want 3", m.slashIndex)
+	if m.slashMenu.index != 3 {
+		t.Fatalf("slashMenu.index = %d, want 3", m.slashMenu.index)
 	}
 
 	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
@@ -342,7 +384,7 @@ func TestSlashCommandMenuNavigatesAndSelects(t *testing.T) {
 	if got := m.editor.Value(); got != "/quit" {
 		t.Fatalf("editor value = %q, want /quit", got)
 	}
-	if m.slashMenuActive() {
+	if m.slashMenu.Active() {
 		t.Fatal("slash menu should hide after selecting a command")
 	}
 }
@@ -350,14 +392,14 @@ func TestSlashCommandMenuNavigatesAndSelects(t *testing.T) {
 func TestSlashCommandMenuTabSelectsFilteredCommand(t *testing.T) {
 	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
 	m.editor.SetValue("/h")
-	m.syncSlashMenu()
+	m.slashMenu.Sync(m.editor.Value())
 
 	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	m = updated.(*Model)
 	if got := m.editor.Value(); got != "/help" {
 		t.Fatalf("editor value = %q, want /help", got)
 	}
-	if m.slashMenuActive() {
+	if m.slashMenu.Active() {
 		t.Fatal("slash menu should hide after tab selection")
 	}
 }
@@ -365,23 +407,23 @@ func TestSlashCommandMenuTabSelectsFilteredCommand(t *testing.T) {
 func TestSlashCommandMenuEscapeAndPlainInput(t *testing.T) {
 	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
 	m.editor.SetValue("/")
-	m.syncSlashMenu()
+	m.slashMenu.Sync(m.editor.Value())
 
 	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEsc}))
 	m = updated.(*Model)
 	if got := m.editor.Value(); got != "/" {
 		t.Fatalf("editor value = %q, want /", got)
 	}
-	if m.slashMenuActive() {
+	if m.slashMenu.Active() {
 		t.Fatal("slash menu should be closed after escape")
 	}
 
 	m.editor.SetValue("hello")
-	m.syncSlashMenu()
-	if m.slashMenuActive() {
+	m.slashMenu.Sync(m.editor.Value())
+	if m.slashMenu.Active() {
 		t.Fatal("slash menu should not be active for plain input")
 	}
-	if menu := m.renderSlashCommandMenu(); menu != "" {
+	if menu := m.slashMenu.View(); menu != "" {
 		t.Fatalf("menu = %q, want empty", menu)
 	}
 }
@@ -460,25 +502,25 @@ func TestSlashCommandMenuIncludesSkills(t *testing.T) {
 
 	// 输入 / 时，菜单同时包含固定命令和 skill 命令
 	m.editor.SetValue("/")
-	m.syncSlashMenu()
-	matches := m.matchedSlashCommands()
+	m.slashMenu.Sync(m.editor.Value())
+	matches := m.slashMenu.Matches()
 	if len(matches) != 6 {
 		t.Fatalf("len(matches) = %d, want 6 (4 fixed + 2 skills)", len(matches))
 	}
-	menu := m.renderSlashCommandMenu()
+	menu := m.slashMenu.View()
 	for _, want := range []string{"clear", "help", "model", "quit", "skill:read", "skill:write"} {
 		if !strings.Contains(menu, want) {
 			t.Fatalf("menu = %q, want it to contain %q", menu, want)
 		}
 	}
-	if !m.slashMenuActive() {
+	if !m.slashMenu.Active() {
 		t.Fatal("slash menu should be active for /")
 	}
 
 	// 输入 skill: 时，只显示 skill 命令
 	m.editor.SetValue("skill:")
-	m.syncSlashMenu()
-	matches = m.matchedSlashCommands()
+	m.slashMenu.Sync(m.editor.Value())
+	matches = m.slashMenu.Matches()
 	if len(matches) != 2 {
 		t.Fatalf("len(matches) = %d, want 2", len(matches))
 	}
@@ -491,9 +533,9 @@ func TestSlashCommandMenuFiltersSkillsByPrefix(t *testing.T) {
 		{Name: "write", Title: "Write", Description: "Rewrite prose"},
 	})
 	m.editor.SetValue("skill:r")
-	m.syncSlashMenu()
+	m.slashMenu.Sync(m.editor.Value())
 
-	matches := m.matchedSlashCommands()
+	matches := m.slashMenu.Matches()
 	if len(matches) != 1 || matches[0].Name != "skill:read" {
 		t.Fatalf("matches = %+v, want only skill:read", matches)
 	}
@@ -507,22 +549,22 @@ func TestSlashCommandMenuFiltersSkillsBySlashQuery(t *testing.T) {
 	})
 
 	m.editor.SetValue("/read")
-	m.syncSlashMenu()
-	matches := m.matchedSlashCommands()
+	m.slashMenu.Sync(m.editor.Value())
+	matches := m.slashMenu.Matches()
 	if len(matches) != 1 || matches[0].Name != "skill:read" {
 		t.Fatalf("matches = %+v, want only skill:read for /read", matches)
 	}
 
 	m.editor.SetValue("/r")
-	m.syncSlashMenu()
-	matches = m.matchedSlashCommands()
+	m.slashMenu.Sync(m.editor.Value())
+	matches = m.slashMenu.Matches()
 	if len(matches) != 1 || matches[0].Name != "skill:read" {
 		t.Fatalf("matches = %+v, want only skill:read for /r", matches)
 	}
 
 	m.editor.SetValue("/w")
-	m.syncSlashMenu()
-	matches = m.matchedSlashCommands()
+	m.slashMenu.Sync(m.editor.Value())
+	matches = m.slashMenu.Matches()
 	if len(matches) != 1 || matches[0].Name != "skill:write" {
 		t.Fatalf("matches = %+v, want only skill:write for /w", matches)
 	}
@@ -656,6 +698,26 @@ func TestRenderStatusLineHasBorder(t *testing.T) {
 	}
 	if !strings.Contains(bordered, "╭") {
 		t.Fatalf("renderStatusLine output should contain rounded border corner, got:\n%s", bordered)
+	}
+}
+func TestRenderHelpBarUsesImplementedBindings(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
+	m = updated.(*Model)
+
+	rendered := m.renderHelpBar()
+	for _, want := range []string{"send", "commands", "quit"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("help bar = %q, want it to contain %q", rendered, want)
+		}
+	}
+	for _, unwanted := range []string{"help", "regenerate", "copy"} {
+		if strings.Contains(rendered, unwanted) {
+			t.Fatalf("help bar = %q, should not contain unsupported action %q", rendered, unwanted)
+		}
+	}
+	if m.help.Width() != m.contentWidth {
+		t.Fatalf("help width = %d, want content width %d", m.help.Width(), m.contentWidth)
 	}
 }
 func TestStatusLineShowsModelName(t *testing.T) {
@@ -998,23 +1060,23 @@ func TestModelSlashCommandOpensSelector(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("submit /model should return a cmd")
 	}
-	if m.form == nil {
-		t.Fatal("form should be set after /model command")
+	if !m.modal.Active() {
+		t.Fatal("modal should be active after /model command")
 	}
-	if m.formKind != "model" {
-		t.Fatalf("formKind = %q, want \"model\"", m.formKind)
+	if m.modal.kind != modalKindModel {
+		t.Fatalf("modal kind = %q, want %q", m.modal.kind, modalKindModel)
 	}
 }
 
 func TestModelSlashCommandExactEnterOpensSelector(t *testing.T) {
 	m := NewModel(nil, "deepseek-v4-flash", "", tools.NewRegistry(), execution.NewTracker(nil), "")
 	m.editor.SetValue("/model")
-	m.syncSlashMenu()
+	m.slashMenu.Sync(m.editor.Value())
 
 	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	m = updated.(*Model)
 
-	if m.form == nil {
+	if !m.modal.Active() {
 		t.Fatal("pressing enter on exact /model command should open selector")
 	}
 }
@@ -1035,6 +1097,63 @@ func TestModelSelectorRendersAsModalOverConversation(t *testing.T) {
 	}
 	if !strings.Contains(view, "选择模型") {
 		t.Fatalf("modal view should contain selector title, got:\n%s", view)
+	}
+}
+
+func TestHandleEmptyModelModalResultResetsEditor(t *testing.T) {
+	m := NewModel(nil, "deepseek-chat", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	m.editor.SetValue("/model")
+
+	m.handleModalResult(modalResult{kind: modalKindModel})
+
+	if got := m.editor.Value(); got != "" {
+		t.Fatalf("editor value = %q, want empty after completed model modal", got)
+	}
+	if m.modelName != "deepseek-chat" {
+		t.Fatalf("model name = %q, want unchanged", m.modelName)
+	}
+}
+
+func TestHandleAbortedModelModalResultResetsEditor(t *testing.T) {
+	m := NewModel(nil, "deepseek-chat", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	m.editor.SetValue("/model")
+	var modal modalModel
+	modal.OpenModel(nil, 80)
+
+	m.handleModalResult(modal.abortedResult())
+
+	if got := m.editor.Value(); got != "" {
+		t.Fatalf("editor value = %q, want empty after aborted model modal", got)
+	}
+	if m.modelName != "deepseek-chat" {
+		t.Fatalf("model name = %q, want unchanged", m.modelName)
+	}
+}
+
+func TestHandleApprovalModalResultDefersResponseToCommand(t *testing.T) {
+	m := NewModel(nil, "", "", tools.NewRegistry(), execution.NewTracker(nil), "")
+	responseCh := make(chan approval.Result, 1)
+	result := approval.Result{Decision: approval.DecisionApproveOnce}
+
+	cmd := m.handleModalResult(modalResult{
+		kind:               modalKindApproval,
+		approval:           &result,
+		approvalResponseCh: responseCh,
+	})
+
+	if cmd == nil {
+		t.Fatal("approval modal result should return a response command")
+	}
+	select {
+	case <-responseCh:
+		t.Fatal("approval response should not be sent before the command runs")
+	default:
+	}
+	if msg := cmd(); msg != nil {
+		t.Fatalf("response command message = %T, want nil", msg)
+	}
+	if got := <-responseCh; got != result {
+		t.Fatalf("approval response = %+v, want %+v", got, result)
 	}
 }
 
